@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
@@ -15,12 +16,13 @@ class GraphConvolution(Module):
         else:
             self.register_parameter('bias', None)
         
-        self.reset_parameters_xavier()
+        self.reset_parameters_uniform()
 
-    def reset_parameters_xavier(self):
-        nn.init.xavier_normal_(self.weight.data, gain=0.02)
+    def reset_parameters_uniform(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
         if self.bias is not None:
-            nn.init.constant_(self.bias.data, 0.0)
+            self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input, adj):
         support = torch.mm(input, self.weight)

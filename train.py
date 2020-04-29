@@ -3,8 +3,10 @@ from __future__ import print_function
 
 import time
 import argparse
+import random
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.linalg import block_diag
 
 import torch
 import torch.nn.functional as F
@@ -62,26 +64,53 @@ n_train = len(adj_train)
 n_val = len(adj_val)
 n_test = len(adj_test)
 
-loss_fn = torch.nn.MSELoss(size_average=False)
+loss_fn = torch.nn.MSELoss()
 
-def train(epoch):
+n_batch = 1
+
+def train(epoch, features_train, adj_train, labels_train):
     t = time.time()
 
     running_loss_train = 0
 
     output = []
 
-    for i in range(n_train):
-        model.train()
+    n_step = int(n_train/n_batch)
+
+    c = list(zip(features_train, adj_train, labels_train))
+    random.shuffle(c)
+    features_train, adj_train, labels_train = zip(*c)
+
+    #for i in range(n_train):
+    for i in range(n_step):
+        batch_n_train = []
+        for j in range(n_batch):
+            batch_n_train.append(len(features_train[n_batch*i+j]))
+        batch_n_train = torch.FloatTensor(batch_n_train)
+
+        batch_features_train = torch.cat(features_train[n_batch*i:n_batch*(i+1)], dim=0)
+        batch_adj_train = torch.from_numpy(block_diag(*adj_train[n_batch*i:n_batch*(i+1)]))
+        batch_labels_train = torch.cat(labels_train[n_batch*i:n_batch*(i+1)], dim=0)
+
+
         optimizer.zero_grad()
-        output_train = model(features_train[i], adj_train[i])
-        loss_train = loss_fn(output_train, labels_train[i])
-        model.zero_grad()
+
+        model.train()
+
+        output_train = model(batch_features_train, batch_adj_train, batch_n_train)
+
+
+        loss_train = loss_fn(output_train, batch_labels_train)
         loss_train.backward()
         optimizer.step()
         running_loss_train += loss_train.data
 
-        output.append(output_train)
+        #print(output_train, batch_labels_train, loss_train.data); exit(1)
+
+
+        for j in range(len(output_train)):
+            output.append(output_train[j])
+
 
     running_loss_val = 0
 
@@ -107,13 +136,14 @@ def train(epoch):
 log = []
 t_total = time.time()
 for epoch in range(args.epochs):
-    log_epoch = train(epoch)
+    log_epoch = train(epoch, features_train, adj_train, labels_train)
 
 output = log_epoch[-1]
 out = []
 for i in range(len(output)):
-    out.append([labels_train[i].detach().numpy(), output[i].detach().numpy()])
+    out.append([labels_train[i][0].detach().numpy(), output[i].detach().numpy()])
 out = np.array(out)
+
 
 plt.scatter(out[:,0], out[:,1], s=5, alpha=.5)
 x = np.linspace(-1, 1, 100)
