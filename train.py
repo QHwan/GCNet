@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from model import GCN
-from data import load_data
+from data.data_prepare import data_prepare
 
 
 # Training settings
@@ -45,10 +45,14 @@ torch.manual_seed(int(time.time()))
 
 
 # Load data
-adj_train, adj_val, adj_test, features_train, features_val, features_test, labels_train, labels_val, labels_test = load_data()
+dataset, _ = data_prepare(filename='./data/dataset/freesolv.npz')
+Xs, As, Ys = dataset
+Xs_train, Xs_val, Xs_test = Xs
+As_train, As_val, As_test = As
+Ys_train, Ys_val, Ys_test = Ys
 
 # Model and optimizer
-n_feat = features_train[0].shape[-1]
+n_feat = Xs_train[0].shape[-1]
 model = GCN(n_feat=n_feat,
             n_hid=args.hidden,
             dropout=args.dropout)
@@ -60,15 +64,15 @@ if args.checkpoint is not None:
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-n_train = len(adj_train)
-n_val = len(adj_val)
-n_test = len(adj_test)
+n_train = len(As_train)
+n_val = len(As_val)
+n_test = len(As_test)
 
 loss_fn = torch.nn.MSELoss()
 
 n_batch = 1
 
-def train(epoch, features_train, adj_train, labels_train):
+def train(epoch, Xs_train, As_train, Ys_train):
     t = time.time()
 
     running_loss_train = 0
@@ -77,50 +81,25 @@ def train(epoch, features_train, adj_train, labels_train):
 
     n_step = int(n_train/n_batch)
 
-    c = list(zip(features_train, adj_train, labels_train))
-    random.shuffle(c)
-    features_train, adj_train, labels_train = zip(*c)
 
-    #for i in range(n_train):
-    for i in range(n_step):
-        batch_n_train = []
-        for j in range(n_batch):
-            batch_n_train.append(len(features_train[n_batch*i+j]))
-        batch_n_train = torch.FloatTensor(batch_n_train)
-
-        batch_features_train = torch.cat(features_train[n_batch*i:n_batch*(i+1)], dim=0)
-        batch_adj_train = torch.from_numpy(block_diag(*adj_train[n_batch*i:n_batch*(i+1)]))
-        batch_labels_train = torch.cat(labels_train[n_batch*i:n_batch*(i+1)], dim=0)
-
-
+    for i in range(n_train):
         optimizer.zero_grad()
 
         model.train()
 
-        output_train = model(batch_features_train, batch_adj_train, batch_n_train)
+        output_train = model(torch.FloatTensor(Xs_train[i]),
+                             torch.FloatTensor(As_train[i]))
 
-
-        loss_train = loss_fn(output_train, batch_labels_train)
+        loss_train = loss_fn(output_train,
+                             torch.FloatTensor([Ys_train[i]]))
         loss_train.backward()
         optimizer.step()
         running_loss_train += loss_train.data
 
-        #print(output_train, batch_labels_train, loss_train.data); exit(1)
-
-
-        for j in range(len(output_train)):
-            output.append(output_train[j])
+        output.append(*output_train.detach().numpy())
 
 
     running_loss_val = 0
-
-    '''
-    for i in range(n_val):
-        model.eval()
-        output_val = model(features_val[i], adj_val[i])
-        loss_val = loss_fn(output_val, labels_val[i])
-        running_loss_val += loss_val.data
-    '''
 
     print('Epoch: {:04d}'.format(epoch+1),
           'loss_train: {:.4f}'.format(running_loss_train/n_train),
@@ -136,12 +115,12 @@ def train(epoch, features_train, adj_train, labels_train):
 log = []
 t_total = time.time()
 for epoch in range(args.epochs):
-    log_epoch = train(epoch, features_train, adj_train, labels_train)
+    log_epoch = train(epoch, Xs_train, As_train, Ys_train)
 
 output = log_epoch[-1]
 out = []
 for i in range(len(output)):
-    out.append([labels_train[i][0].detach().numpy(), output[i].detach().numpy()])
+    out.append([Ys_train[i], output[i]])
 out = np.array(out)
 
 

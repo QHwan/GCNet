@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 def data_prepare(filename,
-                train_ratio, val_ratio, test_ratio):
+                train_ratio=.8, val_ratio=.1, test_ratio=.1):
     f = np.load(filename, allow_pickle=True)
 
     Xs = f['Xs']
@@ -44,9 +44,9 @@ def data_prepare(filename,
 
     print(Ys_train)
 
-    return((Xs_train, Xs_val, Xs_test),
-           (As_train, As_val, As_test),
-           (Ys_train, Ys_val, Ys_test),
+    return(((Xs_train, Xs_val, Xs_test),
+            (As_train, As_val, As_test),
+            (Ys_train, Ys_val, Ys_test)),
            norm_value)
 
 if __name__ == "__main__":

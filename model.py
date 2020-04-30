@@ -13,32 +13,17 @@ class GCN(nn.Module):
         self.nn2 = nn.Linear(8, 1)
         self.dropout = dropout
 
-    def forward(self, x, adj, n):
-        n_feature = x.shape[-1]
-        #print(adj); exit(1)
-        x = F.relu(self.gc1(x, adj))
+    def forward(self, X, A):
+        X = F.relu(self.gc1(X, A))
         #x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gc2(x, adj)
+        X = self.gc2(X, A)
 
-        #print(x, x.shape)
-
-        '''
-        x_pool = torch.zeros((len(n), n_feature))
-        idx = 0
-        #print(n)
-        for i in range(len(n)):
-            n_i = int(n[i].numpy())
-            x_pool[i] = torch.sum(x[idx:idx+n_i], dim=0)
-            idx += n_i
-
-        x = torch.FloatTensor(x_pool)
-        '''
-        x = torch.mean(x, dim=0)
+        X = torch.mean(X, dim=0)
 
         #print(x, x.shape)
 
         #x = torch.mean(x, dim=0)
-        x = F.relu(self.nn1(x))
-        x = self.nn2(x)
+        X = F.relu(self.nn1(X))
+        X = self.nn2(X)
         #print(x); exit(1)
-        return(x)
+        return(X)
