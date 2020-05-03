@@ -25,10 +25,3 @@ class FreeSolvDataset(Dataset):
         return((self.Xs[idx].astype(np.float32),
                 self.As[idx].astype(np.float32),
                 self.Ys[idx].astype(np.float32)))
-
-
-if __name__ == "__main__":
-    data_prepare(filename='dataset/freesolv.npz',
-                train_ratio=.8,
-                val_ratio=.1,
-                test_ratio=.1)

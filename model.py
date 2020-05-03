@@ -14,13 +14,14 @@ class GCN(nn.Module):
             self.gc_layers['relu{}'.format(i)] = nn.ReLU()
             
             if i == n_gc_layers-1:
-                self.gc_layers['dropout{}'.format(i)] = nn.Dropout()
+                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
 
         self.nn_layers = nn.Sequential(
-            nn.Linear(n_feat, 8),
+            nn.Linear(n_feat, n_hid),
             nn.ReLU(),
-            nn.Linear(8, 1)
+            nn.Dropout(dropout),
+            nn.Linear(n_hid, 1)
         )
 
         self.dropout = dropout
@@ -35,8 +36,8 @@ class GCN(nn.Module):
             else:
                 X = gc_layer(X)
             graph_layers.append(X)
-        
-        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=0)
+       
+        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
 
         X = self.nn_layers(X)
         return(X)

@@ -24,8 +24,9 @@ class GraphConvolution(nn.Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, X, A):
-        buf = torch.mm(X, self.W)
-        H = torch.mm(A, buf)
+        #buf = torch.mm(X, self.W)
+        buf = torch.einsum("abc,cd->abd", (X, self.W))
+        H = torch.bmm(A, buf)
 
         if self.bias is not None:
             return(H + self.bias)

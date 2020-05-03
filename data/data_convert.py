@@ -16,6 +16,7 @@ atom_types = []
 num_hs = []
 num_valences = []
 aromaticities = []
+num_atoms = []
 for i, smile in enumerate(smiles):
     mol = Chem.MolFromSmiles(smile)
     atoms = mol.GetAtoms()
@@ -24,6 +25,7 @@ for i, smile in enumerate(smiles):
     num_hs += [atom.GetTotalNumHs() for atom in atoms]
     num_valences += [atom.GetImplicitValence() for atom in atoms]
     aromaticities += [int(atom.GetIsAromatic()) for atom in atoms]
+    num_atoms += [len(atoms)]
 
 atom_type_dict = {}
 num_h_dict = {}
@@ -39,6 +41,9 @@ for i, key in enumerate(sorted(Counter(aromaticities).keys())):
     aromaticity_dict[key] = i
 
 
+max_num_atoms = max(num_atoms)
+num_fea = len(atom_type_dict) + len(num_h_dict) + len(num_valence_dict) + len(aromaticity_dict)
+
 Xs = []; As = []; Ys = []
 for i, smile in enumerate(smiles):
     mol = Chem.MolFromSmiles(smile)
@@ -49,7 +54,7 @@ for i, smile in enumerate(smiles):
     num_valences = [atom.GetImplicitValence() for atom in atoms]
     aromaticities = [int(atom.GetIsAromatic()) for atom in atoms]
 
-    X = []
+    X = np.zeros((max_num_atoms, num_fea))
     for j, (atom_type, num_h, num_valence, aromaticity) in enumerate(zip(atom_types,
                                                                          num_hs,
                                                                          num_valences,
@@ -68,9 +73,11 @@ for i, smile in enumerate(smiles):
                             x_num_h,
                             x_num_valence,
                             x_aromaticity))
-        X.append(x)
+        X[j] = x
 
-    A = GetAdjacencyMatrix(mol) + np.eye(len(atoms))
+    A = np.zeros((max_num_atoms, max_num_atoms))
+    A_mol = GetAdjacencyMatrix(mol)
+    A[0:len(A_mol), 0:len(A_mol)] += A_mol + np.eye(len(A_mol))
     Y = solv_energies[i]
 
     Xs.append(np.array(X))

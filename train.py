@@ -7,8 +7,10 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import block_diag
+from sklearn.metrics import mean_squared_error
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
@@ -29,49 +31,36 @@ parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
 parser.add_argument('--model', type=str, default='GCN',
                     help='Network Model: GCN')
-parser.add_argument('--o', type=str, default=None,
-                    help='Save model')
-parser.add_argument('--checkpoint', type=str, default=None,
-                    help='continue training')
+parser.add_argument('--train_ratio', type=float, default=.8)
+parser.add_argument('--val_ratio', type=float, default=.1)
+parser.add_argument('--n_fold', type=int, default=5,
+                    help='number of repetitive training for error valuation')
 
 args = parser.parse_args()
 
 
-np.random.seed(int(time.time()))
-torch.manual_seed(int(time.time()))
+def train(epoch,
+          train_loader,
+          val_loader,
+          test_loader,
+          n_feat,
+          model=args.model,
+          optimizer='Adam',
+          loss='mse',
+          n_hid=args.hidden,
+          dropout=args.dropout,
+          lr=args.lr):
 
+    if model.lower() == 'gcn':
+        model = GCN(n_feat=n_feat,
+                    n_hid=n_hid,
+                    dropout=dropout)
 
-# Load data
-dataset = FreeSolvDataset(npz_file='./data/dataset/freesolv.npz')
-n_data = len(dataset)
-n_train = int(n_data*0.8)
-n_val = int(n_data*0.1)
-n_test = n_data - n_train - n_val
-trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
+    if optimizer.lower() == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=lr)
 
-
-train_loader = DataLoader(trainset)
-val_loader = DataLoader(valset)
-test_loader = DataLoader(testset)
-
-# Model and optimizer
-n_feat = trainset[0][0].shape[-1]
-model = GCN(n_feat=n_feat,
-            n_hid=args.hidden,
-            dropout=args.dropout)
-
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
-
-if args.checkpoint is not None:
-    checkpoint = torch.load(args.checkpoint)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-loss_fn = torch.nn.MSELoss()
-
-n_batch = 1
-
-def train(epoch, train_loader, val_loader):
+    if loss.lower() == 'mse':
+        loss_fn = nn.MSELoss()
     
     n_train = len(train_loader)
     n_val = len(val_loader)
@@ -90,26 +79,30 @@ def train(epoch, train_loader, val_loader):
             X_batch, A_batch, Y_batch = batch
             optimizer.zero_grad()
 
-            output_train = model(X_batch[0], A_batch[0])
-            loss_train = loss_fn(output_train, Y_batch)
+            output_train = model(X_batch, A_batch)
+            loss_train = loss_fn(output_train.T, Y_batch)
             loss_train.backward()
             optimizer.step()
             running_loss_train += loss_train.data
 
             if i == epoch-1:
-                outputs_train.append(*output_train.detach().numpy())
+                for output, Y in zip(output_train, Y_batch):
+                    outputs_train.append([output.detach().numpy(),
+                                          Y.detach().numpy()])
 
 
         model.eval()
         for j, batch in enumerate(val_loader):
             X_batch, A_batch, Y_batch = batch
-            output_val = model(X_batch[0], A_batch[0])
-            loss_val = loss_fn(output_val, Y_batch)
+            output_val = model(X_batch, A_batch)
+            loss_val = loss_fn(output_val.T, Y_batch)
 
             running_loss_val += loss_val.data
 
             if i == epoch-1:
-                outputs_val.append(*output_val.detach().numpy())
+                for output, Y in zip(output_val, Y_batch):
+                    outputs_val.append([output.detach().numpy(),
+                                        Y.detach().numpy()])
 
         print('Epoch: {:04d}'.format(i+1),
             'loss_train: {:.4f}'.format(running_loss_train/n_train),
@@ -117,33 +110,63 @@ def train(epoch, train_loader, val_loader):
             'time: {:.4f}s'.format(time.time() - t))
 
 
-    return(outputs_train, outputs_val)
+    return(np.array(outputs_train), np.array(outputs_val))
 
 
+def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
+    dataset = FreeSolvDataset(npz_file=npz_file)
+    n_data = len(dataset)
+    n_train = int(n_data*train_ratio)
+    n_val = int(n_data*val_ratio)
+    n_test = n_data - n_train - n_val
+    trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
 
+    dataloader_options = {'batch_size': 16,
+                        'shuffle': True,
+                        'pin_memory': False}
+
+    train_loader = DataLoader(trainset, **dataloader_options)
+    val_loader = DataLoader(valset, **dataloader_options)
+    test_loader = DataLoader(testset, **dataloader_options)
+
+    return(dataset, train_loader, val_loader, test_loader)
+
+
+def cal_loss(x, kind):
+    if kind.lower() == 'rmse':
+        return(mean_squared_error(x[:,0], x[:,1], squared=False))
 
 # Train model
+np.random.seed(int(time.time()))
+torch.manual_seed(int(time.time()))
+
 t_total = time.time()
-outputs_train, outputs_val = train(args.epochs, train_loader, val_loader)
 
-Ys_train = np.array([data[2] for i, data in enumerate(trainset)])
-Ys_val = np.array([data[2] for i, data in enumerate(valset)])
+n_fold = args.n_fold
+losses_train = np.zeros(n_fold)
+losses_val = np.zeros(n_fold)
+for i in range(n_fold):
+    dataset, train_loader, val_loader, test_loader = load_data(npz_file='./data/dataset/freesolv.npz')
+    n_feat = dataset[0][0].shape[-1]
+    outputs_train, outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
+                                    n_feat=n_feat,)
+    outputs_train *= dataset.norm_value
+    outputs_val *= dataset.norm_value
 
-x = np.linspace(-1, 1, 100)
+    losses_train[i] = cal_loss(outputs_train, kind='rmse')
+    losses_val[i] = cal_loss(outputs_val, kind='rmse')
+
+print('Train error: {} +- {}'.format(np.mean(losses_train), np.std(losses_train)))
+print('Validation error: {} +- {}'.format(np.mean(losses_val), np.std(losses_val)))
+
+x = np.linspace(-0.2*dataset.norm_value, dataset.norm_value, 100)
 fig, ax = plt.subplots(nrows=1, ncols=2)
-ax[0].scatter(Ys_train, outputs_train, s=5, alpha=.5)
+ax[0].scatter(outputs_train[:,0], outputs_train[:,1], s=5, alpha=.5)
 ax[0].plot(x, x)
-ax[1].scatter(Ys_val, outputs_val, s=5, alpha=.5)
+ax[1].scatter(outputs_val[:,0], outputs_val[:,1], s=5, alpha=.5)
 ax[1].plot(x, x)
 plt.show()
 
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
-
-# Save File
-if args.o is not None:
-    torch.save({
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-               }, args.o)
