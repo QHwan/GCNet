@@ -7,23 +7,36 @@ class GCN(nn.Module):
     def __init__(self, n_feat, n_hid, dropout):
         super(GCN, self).__init__()
 
-        self.gc1 = GraphConvolution(n_feat, n_feat)
-        self.gc2 = GraphConvolution(n_feat, n_feat)
-        self.nn1 = nn.Linear(n_feat, 8)
-        self.nn2 = nn.Linear(8, 1)
+        n_gc_layers = 2
+        self.gc_layers = nn.ModuleDict({})
+        for i in range(n_gc_layers):
+            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_feat, n_feat)
+            self.gc_layers['relu{}'.format(i)] = nn.ReLU()
+            
+            if i == n_gc_layers-1:
+                self.gc_layers['dropout{}'.format(i)] = nn.Dropout()
+
+
+        self.nn_layers = nn.Sequential(
+            nn.Linear(n_feat, 8),
+            nn.ReLU(),
+            nn.Linear(8, 1)
+        )
+
         self.dropout = dropout
 
     def forward(self, X, A):
-        X = F.relu(self.gc1(X, A))
-        #x = F.dropout(x, self.dropout, training=self.training)
-        X = self.gc2(X, A)
+        graph_layers = []
+        graph_layers.append(X)
 
-        X = torch.mean(X, dim=0)
+        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
+            if key.startswith('gc'):
+                X = gc_layer(X, A)
+            else:
+                X = gc_layer(X)
+            graph_layers.append(X)
+        
+        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=0)
 
-        #print(x, x.shape)
-
-        #x = torch.mean(x, dim=0)
-        X = F.relu(self.nn1(X))
-        X = self.nn2(X)
-        #print(x); exit(1)
+        X = self.nn_layers(X)
         return(X)

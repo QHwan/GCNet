@@ -42,8 +42,6 @@ def data_prepare(filename,
     Ys_val /= norm_value
     Ys_test /= norm_value
 
-    print(Ys_train)
-
     return(((Xs_train, Xs_val, Xs_test),
             (As_train, As_val, As_test),
             (Ys_train, Ys_val, Ys_test)),

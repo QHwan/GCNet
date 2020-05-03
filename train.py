@@ -18,8 +18,6 @@ from data.data_prepare import data_prepare
 
 # Training settings
 parser = argparse.ArgumentParser()
-#parser.add_argument('--fastmode', action='store_true', default=False,
-#                    help='Validate during training pass.')
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001,
@@ -29,9 +27,7 @@ parser.add_argument('--hidden', type=int, default=32,
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
 parser.add_argument('--model', type=str, default='GCN',
-                    help='Network Model: NN, GCN')
-parser.add_argument('--log', type=str, default=None,
-                    help='Log file containing training process')
+                    help='Network Model: GCN')
 parser.add_argument('--o', type=str, default=None,
                     help='Save model')
 parser.add_argument('--checkpoint', type=str, default=None,
@@ -64,69 +60,76 @@ if args.checkpoint is not None:
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-n_train = len(As_train)
-n_val = len(As_val)
-n_test = len(As_test)
-
 loss_fn = torch.nn.MSELoss()
 
 n_batch = 1
 
-def train(epoch, Xs_train, As_train, Ys_train):
-    t = time.time()
+def train(epoch, Xs, As, Ys):
+    Xs_train, Xs_val, _ = Xs
+    As_train, As_val, _ = As
+    Ys_train, Ys_val, _ = Ys
+    
+    n_train = len(Xs_train)
+    n_val = len(Xs_val)
 
-    running_loss_train = 0
-
-    output = []
-
-    n_step = int(n_train/n_batch)
+    outputs_train = []
+    outputs_val = []
 
 
-    for i in range(n_train):
-        optimizer.zero_grad()
+    for i in range(epoch):
+        t = time.time()
+        running_loss_train = 0
+        running_loss_val = 0
 
         model.train()
+        for j in range(n_train):
+            optimizer.zero_grad()
 
-        output_train = model(torch.FloatTensor(Xs_train[i]),
-                             torch.FloatTensor(As_train[i]))
+            output_train = model(torch.FloatTensor(Xs_train[j]),
+                                 torch.FloatTensor(As_train[j]))
+            loss_train = loss_fn(output_train,
+                                 torch.FloatTensor([Ys_train[j]]))
+            loss_train.backward()
+            optimizer.step()
+            running_loss_train += loss_train.data
 
-        loss_train = loss_fn(output_train,
-                             torch.FloatTensor([Ys_train[i]]))
-        loss_train.backward()
-        optimizer.step()
-        running_loss_train += loss_train.data
-
-        output.append(*output_train.detach().numpy())
+            if i == epoch-1:
+                outputs_train.append(*output_train.detach().numpy())
 
 
-    running_loss_val = 0
+        model.eval()
+        for j in range(n_val):
+            output_val = model(torch.FloatTensor(Xs_val[j]),
+                               torch.FloatTensor(As_val[j]))
+            loss_val = loss_fn(output_val,
+                               torch.FloatTensor([Ys_val[j]]))
 
-    print('Epoch: {:04d}'.format(epoch+1),
-          'loss_train: {:.4f}'.format(running_loss_train/n_train),
-          'loss_val: {:.4f}'.format(running_loss_val/n_val),
-          'time: {:.4f}s'.format(time.time() - t))
+            running_loss_val += loss_val.data
 
-    return [epoch+1, running_loss_train/n_train, running_loss_val/n_val, output]
+            if i == epoch-1:
+                outputs_val.append(*output_val.detach().numpy())
+
+        print('Epoch: {:04d}'.format(i+1),
+            'loss_train: {:.4f}'.format(running_loss_train/n_train),
+            'loss_val: {:.4f}'.format(running_loss_val/n_val),
+            'time: {:.4f}s'.format(time.time() - t))
+
+
+    return(outputs_train, outputs_val)
 
 
 
 
 # Train model
-log = []
 t_total = time.time()
-for epoch in range(args.epochs):
-    log_epoch = train(epoch, Xs_train, As_train, Ys_train)
+outputs_train, outputs_val = train(args.epochs, Xs, As, Ys)
 
-output = log_epoch[-1]
-out = []
-for i in range(len(output)):
-    out.append([Ys_train[i], output[i]])
-out = np.array(out)
-
-
-plt.scatter(out[:,0], out[:,1], s=5, alpha=.5)
 x = np.linspace(-1, 1, 100)
-plt.plot(x, x)
+fig, ax = plt.subplots(nrows=1, ncols=2)
+ax[0].scatter(Ys_train, outputs_train, s=5, alpha=.5)
+ax[0].plot(x, x)
+ax[1].scatter(Ys_val, outputs_val, s=5, alpha=.5)
+ax[1].plot(x, x)
 plt.show()
 
 print("Optimization Finished!")
@@ -134,9 +137,6 @@ print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
 
 # Save File
-if args.log is not None:
-    np.savetxt(args.log, log)
-
 if args.o is not None:
     torch.save({
                 'model_state_dict': model.state_dict(),
