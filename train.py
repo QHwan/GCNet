@@ -3,15 +3,12 @@ from __future__ import print_function
 
 import time
 import argparse
-import random
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.linalg import block_diag
 from sklearn.metrics import mean_squared_error
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 
