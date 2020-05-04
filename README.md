@@ -9,6 +9,8 @@ Baseline 작성이 완료되었으며, 현재는 freesolv dataset과 Graph Convo
 
 ## Example
 data/ 폴더에 freesolv.csv 파일이 있어야 합니다. (다운로드 링크: http://moleculenet.ai/datasets-1)
+FreeSolv dataset은 642종류의 분자들의 solvation free energy를 담고 있습니다.
+여기에서는 분자구조를 graphical data로 변환하고 graph convolutional network를 이용해 solvation free energy를 예측하는 ai를 개발합니다.
 
 우선 freesolv.csv 파일을 가공해서 .npz 파일로 변환합니다.
 ```
@@ -19,3 +21,4 @@ python data/data_convert.py
 ```
 python train.py --epoch 100
 ```
+
