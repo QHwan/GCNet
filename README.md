@@ -22,3 +22,8 @@ python data/data_convert.py
 python train.py --epoch 100
 ```
 
+다음과 같은 결과를 얻습니다.
+
+![Figure_1](https://user-images.githubusercontent.com/30894739/80936944-19195b80-8e0e-11ea-825f-2f9d509f12c6.png)
+
+결과의 RMSE 값은 1.48 kcal/mol 입니다. 가장 단순한 graph convolutional network만을 이용한 값이 이 정도고, 앞으로 더 좋은 network structure를 이용하면 더 정확한 결과를 얻을 수 있을 것입니다.
