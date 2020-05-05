@@ -68,14 +68,19 @@ class GraphAttention(nn.Module):
         denominator = torch.exp(Z1)
         numerator = torch.mm(A, denominator)
 
+        mask = numerator != 0
+
+        '''
         for i in range(self.n_node):
             for j in range(self.n_node):
                 if numerator[i,j] == 0:
                     continue
                 att[i,j] = denominator[i,j]/numerator[i,j]
+        '''
 
-        #self.att = torch.div(denominator, numerator)
-        #self.att[mask] = 0
+        buf = torch.div(denominator[mask], numerator[mask])
+        att[mask] = buf
+
 
     def forward(self, X, A):
         att = torch.FloatTensor(self.n_node, self.n_node)
