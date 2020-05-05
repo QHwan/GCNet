@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 
-from model import GCN
+from model import GCN, GAT
 from data.data_prepare import FreeSolvDataset
 
 
@@ -26,8 +26,8 @@ parser.add_argument('--hidden', type=int, default=32,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
-parser.add_argument('--model', type=str, default='GCN',
-                    help='Network Model: GCN')
+parser.add_argument('--model', type=str, default='GAT',
+                    help='Network Model: GCN, GAT')
 parser.add_argument('--train_ratio', type=float, default=.8)
 parser.add_argument('--val_ratio', type=float, default=.1)
 parser.add_argument('--n_fold', type=int, default=5,
@@ -40,6 +40,7 @@ def train(epoch,
           train_loader,
           val_loader,
           test_loader,
+          n_node,
           n_feat,
           model=args.model,
           optimizer='Adam',
@@ -50,6 +51,12 @@ def train(epoch,
 
     if model.lower() == 'gcn':
         model = GCN(n_feat=n_feat,
+                    n_hid=n_hid,
+                    dropout=dropout)
+
+    if model.lower() == 'gat':
+        model = GAT(n_node=n_node,
+                    n_feat=n_feat,
                     n_hid=n_hid,
                     dropout=dropout)
 
@@ -76,8 +83,9 @@ def train(epoch,
             X_batch, A_batch, Y_batch = batch
             optimizer.zero_grad()
 
-            output_train = model(X_batch, A_batch)
+            output_train = model(X_batch[0], A_batch[0])
             loss_train = loss_fn(output_train.T, Y_batch)
+
             loss_train.backward()
             optimizer.step()
             running_loss_train += loss_train.data
@@ -91,7 +99,7 @@ def train(epoch,
         model.eval()
         for j, batch in enumerate(val_loader):
             X_batch, A_batch, Y_batch = batch
-            output_val = model(X_batch, A_batch)
+            output_val = model(X_batch[0], A_batch[0])
             loss_val = loss_fn(output_val.T, Y_batch)
 
             running_loss_val += loss_val.data
@@ -118,7 +126,7 @@ def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
     n_test = n_data - n_train - n_val
     trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
 
-    dataloader_options = {'batch_size': 16,
+    dataloader_options = {'batch_size': 1,
                         'shuffle': True,
                         'pin_memory': False}
 
@@ -144,9 +152,9 @@ losses_train = np.zeros(n_fold)
 losses_val = np.zeros(n_fold)
 for i in range(n_fold):
     dataset, train_loader, val_loader, test_loader = load_data(npz_file='./data/dataset/freesolv.npz')
-    n_feat = dataset[0][0].shape[-1]
+    n_node, n_feat = dataset[0][0].shape
     outputs_train, outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
-                                    n_feat=n_feat,)
+                                    n_feat=n_feat, n_node=n_node)
     outputs_train *= dataset.norm_value
     outputs_val *= dataset.norm_value
 
@@ -157,11 +165,11 @@ print('Train error: {} +- {}'.format(np.mean(losses_train), np.std(losses_train)
 print('Validation error: {} +- {}'.format(np.mean(losses_val), np.std(losses_val)))
 
 x = np.linspace(-0.2*dataset.norm_value, dataset.norm_value, 100)
-fig, ax = plt.subplots(nrows=1, ncols=2)
-ax[0].scatter(outputs_train[:,0], outputs_train[:,1], s=5, alpha=.5)
-ax[0].plot(x, x)
-ax[1].scatter(outputs_val[:,0], outputs_val[:,1], s=5, alpha=.5)
-ax[1].plot(x, x)
+fig, ax = plt.subplots(nrows=1, ncols=1)
+ax.scatter(outputs_val[:,0], outputs_val[:,1], s=5, alpha=.5)
+ax.plot(x, x)
+ax.set_xlabel('Prediction (kcal/mol)')
+ax.set_ylabel('Experiment (kcal/mol)')
 plt.show()
 
 print("Optimization Finished!")

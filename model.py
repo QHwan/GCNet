@@ -4,7 +4,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from layers import GraphConvolution
+from layers import GraphConvolution, GraphAttention
 
 class GCN(nn.Module):
     def __init__(self, n_feat, n_hid, dropout):
@@ -44,3 +44,34 @@ class GCN(nn.Module):
 
         X = self.nn_layers(X)
         return(X)
+
+
+class GAT(nn.Module):
+    def __init__(self, n_node, n_feat, n_hid, dropout):
+        super(GAT, self).__init__()
+
+        self.gat = GraphAttention(n_node, n_feat, n_feat)
+
+        self.dropout = dropout
+
+        self.nn_layers = nn.Sequential(
+            nn.Linear(n_feat, n_hid),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(n_hid, 1)
+        )
+
+        self.dropout = dropout
+
+    def forward(self, X, A):
+        #if X.shape[0] == 1:
+        #    X = torch.squeeze(X)
+        #if A.shape[0] == 1:
+        #    A = torch.squeeze(A)
+
+        X = self.gat(X, A)
+
+        X = torch.mean(X, dim=0)
+        X = self.nn_layers(X)
+        return(X)
+
