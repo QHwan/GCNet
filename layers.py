@@ -39,16 +39,17 @@ class GraphConvolution(nn.Module):
 
 
 class GraphAttention(nn.Module):
-    def __init__(self, n_node, n_fea_in, n_fea_out, bias=True):
+    def __init__(self, n_node, n_fea_in, n_fea_out, n_batch, bias=True):
         super(GraphAttention, self).__init__()
         self.n_fea_in = n_fea_in
         self.n_fea_out = n_fea_out
         self.n_node = n_node
+        self.n_batch = n_batch
         self.W = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
         self.a = Parameter(torch.FloatTensor(1, 2*n_fea_out))
 
         self.bias_W = Parameter(torch.FloatTensor(n_fea_out))
-        self.bias_a = Parameter(torch.FloatTensor(2*n_fea_out))
+        self.bias_a = Parameter(torch.FloatTensor(n_node))
         
         self.reset_parameters_uniform(self.W, self.bias_W)
         self.reset_parameters_uniform(self.a, self.bias_a)
@@ -59,36 +60,29 @@ class GraphAttention(nn.Module):
         bias.data.uniform_(-stdv, stdv)
 
     def attention(self, XW, A, att):
-        X1 = XW.unsqueeze(0)
-        Y1 = XW.unsqueeze(1)
-        X2 = X1.repeat(XW.shape[0], 1, 1)
-        Y2 = Y1.repeat(1, XW.shape[0], 1)
-        Z = torch.cat([X2, Y2], -1)
-        Z1 = F.leaky_relu(torch.einsum("abc,cd->abd", (Z, self.a.T)).squeeze())
+        X1 = XW.unsqueeze(1)
+        Y1 = XW.unsqueeze(2)
+        X2 = X1.repeat(1, XW.shape[1], 1, 1)
+        Y2 = Y1.repeat(1, 1, XW.shape[1], 1)
+        Z = torch.cat([X2, Y2], 3)
+        Z1 = torch.einsum("abcd,de->abce", (Z, self.a.T)).squeeze() + self.bias_a
         denominator = torch.exp(Z1)
-        numerator = torch.mm(A, denominator)
+        numerator = torch.bmm(A, denominator)
 
-        mask = numerator != 0
+        for i in range(self.n_batch):
+            mask = numerator[i] != 0
 
-        '''
-        for i in range(self.n_node):
-            for j in range(self.n_node):
-                if numerator[i,j] == 0:
-                    continue
-                att[i,j] = denominator[i,j]/numerator[i,j]
-        '''
-
-        buf = torch.div(denominator[mask], numerator[mask])
-        att[mask] = buf
+            buf = torch.div(denominator[i][mask], numerator[i][mask])
+            att[i][mask] = buf
 
 
     def forward(self, X, A):
-        att = torch.FloatTensor(self.n_node, self.n_node)
+        att = torch.FloatTensor(self.n_batch, self.n_node, self.n_node)
  
-        XW = torch.mm(X, self.W)
+        XW = torch.einsum("abc,cd->abd", (X, self.W))
         self.attention(XW, A, att)
-        buf = torch.mm(att, XW)
-        H = torch.mm(A, buf)
+        buf = torch.bmm(att, XW)
+        H = torch.bmm(A, buf) + self.bias_W
         return(H)
 
     

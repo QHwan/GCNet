@@ -26,7 +26,7 @@ parser.add_argument('--hidden', type=int, default=32,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
-parser.add_argument('--model', type=str, default='GAT',
+parser.add_argument('--model', type=str, default='GCN',
                     help='Network Model: GCN, GAT')
 parser.add_argument('--train_ratio', type=float, default=.8)
 parser.add_argument('--val_ratio', type=float, default=.1)
@@ -42,22 +42,24 @@ def train(epoch,
           test_loader,
           n_node,
           n_feat,
-          model=args.model,
+          n_batch,
+          model_name=args.model,
           optimizer='Adam',
           loss='mse',
           n_hid=args.hidden,
           dropout=args.dropout,
           lr=args.lr):
 
-    if model.lower() == 'gcn':
+    if model_name.lower() == 'gcn':
         model = GCN(n_feat=n_feat,
                     n_hid=n_hid,
                     dropout=dropout)
 
-    if model.lower() == 'gat':
+    if model_name.lower() == 'gat':
         model = GAT(n_node=n_node,
                     n_feat=n_feat,
                     n_hid=n_hid,
+                    n_batch=n_batch,
                     dropout=dropout)
 
     if optimizer.lower() == 'adam':
@@ -83,7 +85,7 @@ def train(epoch,
             X_batch, A_batch, Y_batch = batch
             optimizer.zero_grad()
 
-            output_train = model(X_batch[0], A_batch[0])
+            output_train = model(X_batch, A_batch)
             loss_train = loss_fn(output_train.T, Y_batch)
 
             loss_train.backward()
@@ -99,7 +101,7 @@ def train(epoch,
         model.eval()
         for j, batch in enumerate(val_loader):
             X_batch, A_batch, Y_batch = batch
-            output_val = model(X_batch[0], A_batch[0])
+            output_val = model(X_batch, A_batch)
             loss_val = loss_fn(output_val.T, Y_batch)
 
             running_loss_val += loss_val.data
@@ -126,9 +128,10 @@ def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
     n_test = n_data - n_train - n_val
     trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
 
-    dataloader_options = {'batch_size': 1,
+    dataloader_options = {'batch_size': 8,
                         'shuffle': True,
-                        'pin_memory': False}
+                        'pin_memory': False,
+                        'drop_last': True}
 
     train_loader = DataLoader(trainset, **dataloader_options)
     val_loader = DataLoader(valset, **dataloader_options)
@@ -150,11 +153,14 @@ t_total = time.time()
 n_fold = args.n_fold
 losses_train = np.zeros(n_fold)
 losses_val = np.zeros(n_fold)
+
+n_batch = 8
+
 for i in range(n_fold):
     dataset, train_loader, val_loader, test_loader = load_data(npz_file='./data/dataset/freesolv.npz')
     n_node, n_feat = dataset[0][0].shape
     outputs_train, outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
-                                    n_feat=n_feat, n_node=n_node)
+                                    n_feat=n_feat, n_node=n_node, n_batch=n_batch)
     outputs_train *= dataset.norm_value
     outputs_val *= dataset.norm_value
 

@@ -47,10 +47,19 @@ class GCN(nn.Module):
 
 
 class GAT(nn.Module):
-    def __init__(self, n_node, n_feat, n_hid, dropout):
+    def __init__(self, n_node, n_feat, n_hid, n_batch, dropout):
         super(GAT, self).__init__()
 
-        self.gat = GraphAttention(n_node, n_feat, n_feat)
+        self.gat = GraphAttention(n_node, n_feat, n_feat, n_batch=n_batch)
+
+        n_gat_layers = 2
+        self.gat_layers = nn.ModuleDict({})
+        for i in range(n_gat_layers):
+            self.gat_layers['gat{}'.format(i)] = GraphAttention(n_node, n_feat, n_feat, n_batch)
+            self.gat_layers['relu{}'.format(i)] = nn.ReLU()
+            
+            if i == n_gat_layers-1:
+                self.gat_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
         self.dropout = dropout
 
@@ -64,14 +73,18 @@ class GAT(nn.Module):
         self.dropout = dropout
 
     def forward(self, X, A):
-        #if X.shape[0] == 1:
-        #    X = torch.squeeze(X)
-        #if A.shape[0] == 1:
-        #    A = torch.squeeze(A)
+        graph_layers = []
+        graph_layers.append(X)
 
-        X = self.gat(X, A)
+        for i, (key, gat_layer) in enumerate(self.gat_layers.items()):
+            if key.startswith('gat'):
+                X = gat_layer(X, A)
+            else:
+                X = gat_layer(X)
+            graph_layers.append(X)
+       
+        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
 
-        X = torch.mean(X, dim=0)
         X = self.nn_layers(X)
         return(X)
 
