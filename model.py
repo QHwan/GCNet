@@ -50,12 +50,10 @@ class GAT(nn.Module):
     def __init__(self, n_node, n_feat, n_hid, n_batch, dropout):
         super(GAT, self).__init__()
 
-        self.gat = GraphAttention(n_node, n_feat, n_feat, n_batch=n_batch)
-
-        n_gat_layers = 2
+        n_gat_layers = 1
         self.gat_layers = nn.ModuleDict({})
         for i in range(n_gat_layers):
-            self.gat_layers['gat{}'.format(i)] = GraphAttention(n_node, n_feat, n_feat, n_batch)
+            self.gat_layers['gat{}'.format(i)] = GraphAttention(n_node, n_feat, n_feat, n_batch=n_batch)
             self.gat_layers['relu{}'.format(i)] = nn.ReLU()
             
             if i == n_gat_layers-1:

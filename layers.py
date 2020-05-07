@@ -28,7 +28,6 @@ class GraphConvolution(nn.Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, X, A):
-        #buf = torch.mm(X, self.W)
         buf = torch.einsum("abc,cd->abd", (X, self.W))
         H = torch.bmm(A, buf)
 
@@ -46,7 +45,7 @@ class GraphAttention(nn.Module):
         self.n_node = n_node
         self.n_batch = n_batch
         self.W = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
-        self.a = Parameter(torch.FloatTensor(1, 2*n_fea_out))
+        self.a = Parameter(torch.FloatTensor(2*n_fea_out, 1))
 
         self.bias_W = Parameter(torch.FloatTensor(n_fea_out))
         self.bias_a = Parameter(torch.FloatTensor(n_node))
@@ -65,8 +64,8 @@ class GraphAttention(nn.Module):
         X2 = X1.repeat(1, XW.shape[1], 1, 1)
         Y2 = Y1.repeat(1, 1, XW.shape[1], 1)
         Z = torch.cat([X2, Y2], 3)
-        Z1 = torch.einsum("abcd,de->abce", (Z, self.a.T)).squeeze() + self.bias_a
-        denominator = torch.exp(Z1)
+        Z1 = torch.einsum("abcd,de->abce", (Z, self.a)).squeeze() + self.bias_a
+        denominator = (torch.exp(Z1))
         numerator = torch.bmm(A, denominator)
 
         for i in range(self.n_batch):

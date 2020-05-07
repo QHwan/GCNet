@@ -20,7 +20,7 @@ from data.data_prepare import FreeSolvDataset
 parser = argparse.ArgumentParser()
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.001,
+parser.add_argument('--lr', type=float, default=1e-3,
                     help='Initial learning rate.')
 parser.add_argument('--hidden', type=int, default=32,
                     help='Number of hidden units.')
@@ -28,10 +28,13 @@ parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
 parser.add_argument('--model', type=str, default='GCN',
                     help='Network Model: GCN, GAT')
+parser.add_argument('--cuda', type=bool, default=False)
 parser.add_argument('--train_ratio', type=float, default=.8)
 parser.add_argument('--val_ratio', type=float, default=.1)
 parser.add_argument('--n_fold', type=int, default=5,
                     help='number of repetitive training for error valuation')
+parser.add_argument('--n_batch', type=int, default=8,
+                    help='number of mini-batch')
 
 args = parser.parse_args()
 
@@ -42,7 +45,7 @@ def train(epoch,
           test_loader,
           n_node,
           n_feat,
-          n_batch,
+          n_batch=args.n_batch,
           model_name=args.model,
           optimizer='Adam',
           loss='mse',
@@ -63,7 +66,7 @@ def train(epoch,
                     dropout=dropout)
 
     if optimizer.lower() == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=lr)
+        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
 
     if loss.lower() == 'mse':
         loss_fn = nn.MSELoss()
@@ -83,6 +86,7 @@ def train(epoch,
         model.train()
         for j, batch in enumerate(train_loader):
             X_batch, A_batch, Y_batch = batch
+
             optimizer.zero_grad()
 
             output_train = model(X_batch, A_batch)
@@ -96,7 +100,6 @@ def train(epoch,
                 for output, Y in zip(output_train, Y_batch):
                     outputs_train.append([output.detach().numpy(),
                                           Y.detach().numpy()])
-
 
         model.eval()
         for j, batch in enumerate(val_loader):
@@ -128,7 +131,7 @@ def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
     n_test = n_data - n_train - n_val
     trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
 
-    dataloader_options = {'batch_size': 8,
+    dataloader_options = {'batch_size': args.n_batch,
                         'shuffle': True,
                         'pin_memory': False,
                         'drop_last': True}
@@ -154,13 +157,11 @@ n_fold = args.n_fold
 losses_train = np.zeros(n_fold)
 losses_val = np.zeros(n_fold)
 
-n_batch = 8
-
 for i in range(n_fold):
     dataset, train_loader, val_loader, test_loader = load_data(npz_file='./data/dataset/freesolv.npz')
     n_node, n_feat = dataset[0][0].shape
     outputs_train, outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
-                                    n_feat=n_feat, n_node=n_node, n_batch=n_batch)
+                                    n_feat=n_feat, n_node=n_node, n_batch=args.n_batch)
     outputs_train *= dataset.norm_value
     outputs_val *= dataset.norm_value
 
