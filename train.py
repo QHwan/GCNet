@@ -13,11 +13,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 
 from model import GCN, GAT
-from data.data_prepare import FreeSolvDataset
+from data.data_prepare import GraphDataset
 
 
 # Training settings
 parser = argparse.ArgumentParser()
+parser.add_argument('--f', type=str)
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=1e-3,
@@ -124,7 +125,7 @@ def train(epoch,
 
 
 def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
-    dataset = FreeSolvDataset(npz_file=npz_file)
+    dataset = GraphDataset(npz_file=npz_file)
     n_data = len(dataset)
     n_train = int(n_data*train_ratio)
     n_val = int(n_data*val_ratio)
@@ -158,7 +159,7 @@ losses_train = np.zeros(n_fold)
 losses_val = np.zeros(n_fold)
 
 for i in range(n_fold):
-    dataset, train_loader, val_loader, test_loader = load_data(npz_file='./data/dataset/freesolv.npz')
+    dataset, train_loader, val_loader, test_loader = load_data(npz_file=args.f)
     n_node, n_feat = dataset[0][0].shape
     outputs_train, outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
                                     n_feat=n_feat, n_node=n_node, n_batch=args.n_batch)

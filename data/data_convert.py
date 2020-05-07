@@ -3,6 +3,7 @@ from __future__ import print_function
 
 import argparse
 import numpy as np
+import scipy.sparse as sp
 import pandas as pd
 from collections import Counter
 
@@ -62,9 +63,11 @@ def get_n_nodes(smiles):
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str,
                     help='Dataset name.')
+parser.add_argument('--o', type=str)
 args = parser.parse_args()
 
-dataset_dict = {'freesolv': 'freesolv.csv'}
+dataset_dict = {'freesolv': 'freesolv.csv',
+                'esol': 'esol.csv'}
 
 if args.dataset.lower() not in dataset_dict.keys():
     print("Choose supported datasets.")
@@ -77,7 +80,11 @@ if args.dataset == 'freesolv':
 
 if args.dataset == 'freesolv':
     smiles = np.array(raw_dataset['smiles'])
-    solv_energies = np.array(raw_dataset['expt'])
+    outs = np.array(raw_dataset['expt'])
+
+if args.dataset == 'esol':
+    smiles = np.array(raw_dataset['smiles'])
+    outs = np.array(raw_dataset['measured log solubility in mols per litre'])
 
 n_nodes = get_n_nodes(smiles)
 n_feas = len(atom_list + degree_list + valence_list + formal_charge_list +
@@ -98,11 +105,11 @@ for i, smile in enumerate(smiles):
     A_mol = GetAdjacencyMatrix(mol)
     A[0:len(A_mol), 0:len(A_mol)] += A_mol + np.eye(len(A_mol))
     
-    Y = solv_energies[i]
+    Y = outs[i]
 
-    Xs.append(np.array(X))
-    As.append(np.array(A))
-    Ys.append(np.array(Y))
+    Xs.append(sp.csr_matrix(X))
+    As.append(sp.csr_matrix(A))
+    Ys.append(Y)
 
 
-np.savez('dataset/freesolv.npz', Xs=Xs, As=As, Ys=Ys)
+np.savez(args.o, Xs=Xs, As=As, Ys=Ys)
