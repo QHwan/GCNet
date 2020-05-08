@@ -63,18 +63,18 @@ def get_n_nodes(smiles):
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str,
                     help='Dataset name.')
-parser.add_argument('--o', type=str)
 args = parser.parse_args()
 
-dataset_dict = {'freesolv': 'freesolv.csv',
-                'esol': 'esol.csv'}
+dataset_dict = {'freesolv': ['freesolv.csv', 'freesolv.npz'],
+                'esol': ['esol.csv', 'esol.npz']}
 
 if args.dataset.lower() not in dataset_dict.keys():
     print("Choose supported datasets.")
     exit(1)
 
-raw_dataset_filename = './dataset/' + dataset_dict[args.dataset.lower()]
-raw_dataset = pd.read_csv(raw_dataset_filename)
+ifilename, ofilename = './dataset/' + dataset_dict[args.dataset.lower()]
+
+raw_dataset = pd.read_csv(ifilename)
 if args.dataset == 'freesolv':
     raw_dataset = raw_dataset[raw_dataset['expt'] > -10]
 
@@ -112,4 +112,4 @@ for i, smile in enumerate(smiles):
     Ys.append(Y)
 
 
-np.savez(args.o, Xs=Xs, As=As, Ys=Ys)
+np.savez(ofilename, Xs=Xs, As=As, Ys=Ys)
