@@ -23,7 +23,11 @@ parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=1e-3,
                     help='Initial learning rate.')
-parser.add_argument('--hidden', type=int, default=32,
+parser.add_argument('--n_glayer', type=int, default=1,
+                    help='Number of graph layer')
+parser.add_argument('--n_nlayer', type=int, default=1,
+                    help='Number of dense layer')
+parser.add_argument('--n_hid', nargs='+', type=int, default=32,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
@@ -46,23 +50,35 @@ def train(epoch,
           test_loader,
           n_node,
           n_feat,
+          n_nlayer=args.n_nlayer,
+          n_glayer=args.n_glayer,
           n_batch=args.n_batch,
           model_name=args.model,
           optimizer='Adam',
           loss='mse',
-          n_hid=args.hidden,
+          n_hid=args.n_hid,
           dropout=args.dropout,
           lr=args.lr):
 
+    if len(n_hid) != n_nlayer:
+        print("# of hidden layers != length of hidden unit list")
+        exit(1)
+
     if model_name.lower() == 'gcn':
-        model = GCN(n_feat=n_feat,
+        model = GCN(n_node=n_node,
+                    n_feat=n_feat,
                     n_hid=n_hid,
+                    n_nlayer=n_nlayer,
+                    n_glayer=n_glayer,
+                    n_batch=n_batch,
                     dropout=dropout)
 
     if model_name.lower() == 'gat':
         model = GAT(n_node=n_node,
                     n_feat=n_feat,
                     n_hid=n_hid,
+                    n_nlayer=n_nlayer,
+                    n_glayer=n_glayer,
                     n_batch=n_batch,
                     dropout=dropout)
 
@@ -91,7 +107,8 @@ def train(epoch,
             optimizer.zero_grad()
 
             output_train = model(X_batch, A_batch)
-            loss_train = loss_fn(output_train.T, Y_batch)
+            loss_train = loss_fn(output_train.squeeze(), 
+                                 Y_batch)
 
             loss_train.backward()
             optimizer.step()
@@ -106,7 +123,8 @@ def train(epoch,
         for j, batch in enumerate(val_loader):
             X_batch, A_batch, Y_batch = batch
             output_val = model(X_batch, A_batch)
-            loss_val = loss_fn(output_val.T, Y_batch)
+            loss_val = loss_fn(output_val.squeeze(),
+                               Y_batch)
 
             running_loss_val += loss_val.data
 

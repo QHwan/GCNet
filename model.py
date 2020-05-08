@@ -6,28 +6,45 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers import GraphConvolution, GraphAttention
 
-class GCN(nn.Module):
-    def __init__(self, n_feat, n_hid, dropout):
-        super(GCN, self).__init__()
+def make_nn_layers(n_nlayer, n_hid, n_feat, dropout):
+    nn_module = []
+    for i in range(n_nlayer):
+        if i == 0:
+            nn_module.append(nn.Linear(n_feat, n_hid[0]))
+        else:
+            nn_module.append(nn.Linear(n_hid[i-1], n_hid[i]))
+        nn_module.append(nn.ReLU())
+    nn_module.append(nn.Dropout(dropout))
+    nn_module.append(nn.Linear(n_hid[-1], 1))
+    return(nn.Sequential(*nn_module))
 
-        n_gc_layers = 2
-        self.gc_layers = nn.ModuleDict({})
-        for i in range(n_gc_layers):
-            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_feat, n_feat)
-            self.gc_layers['relu{}'.format(i)] = nn.ReLU()
-            
-            if i == n_gc_layers-1:
-                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
-
-        self.nn_layers = nn.Sequential(
-            nn.Linear(n_feat, n_hid),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(n_hid, 1)
-        )
-
+class CoreModule(nn.Module):
+    def __init__(self, n_node, n_feat, n_hid,
+                 n_nlayer, n_glayer, n_batch, dropout):
+        super(CoreModule, self).__init__()
+        self.n_node = n_node
+        self.n_feat = n_feat
+        self.n_hid = n_hid
+        self.n_nlayer = n_nlayer
+        self.n_glayer = n_glayer
+        self.n_batch = n_batch
         self.dropout = dropout
+
+        self.nn_layers = make_nn_layers(n_nlayer, n_hid, n_feat, dropout)
+
+class GCN(CoreModule):
+    def __init__(self, n_node, n_feat, n_hid,
+                 n_nlayer, n_glayer, n_batch, dropout):
+        super().__init__(n_node, n_feat, n_hid,
+                         n_nlayer, n_glayer, n_batch, dropout)
+
+        self.gc_layers = nn.ModuleDict({})
+        for i in range(n_glayer):
+            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_feat, n_feat, n_node, n_batch=n_batch)
+            self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
+            if i == n_glayer-1:
+                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
     def forward(self, X, A):
         graph_layers = []
@@ -46,29 +63,19 @@ class GCN(nn.Module):
         return(X)
 
 
-class GAT(nn.Module):
-    def __init__(self, n_node, n_feat, n_hid, n_batch, dropout):
-        super(GAT, self).__init__()
+class GAT(CoreModule):
+    def __init__(self, n_node, n_feat, n_hid,
+                 n_nlayer, n_glayer, n_batch, dropout):        
+        super().__init__(n_node, n_feat, n_hid,
+                         n_nlayer, n_glayer, n_batch, dropout)
 
-        n_gat_layers = 1
         self.gat_layers = nn.ModuleDict({})
-        for i in range(n_gat_layers):
+        for i in range(n_glayer):
             self.gat_layers['gat{}'.format(i)] = GraphAttention(n_node, n_feat, n_feat, n_batch=n_batch)
             self.gat_layers['relu{}'.format(i)] = nn.ReLU()
             
-            if i == n_gat_layers-1:
+            if i == n_glayer-1:
                 self.gat_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
-
-        self.dropout = dropout
-
-        self.nn_layers = nn.Sequential(
-            nn.Linear(n_feat, n_hid),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(n_hid, 1)
-        )
-
-        self.dropout = dropout
 
     def forward(self, X, A):
         graph_layers = []
