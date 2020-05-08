@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 
-from model import GCN, GAT
+from model import GCN, GAT, GCN_Gate
 from data.data_prepare import GraphDataset
 
 
@@ -32,7 +32,7 @@ parser.add_argument('--n_hid', nargs='+', type=int, default=32,
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
 parser.add_argument('--model', type=str, default='GCN',
-                    help='Network Model: GCN, GAT')
+                    help='Network Model: GCN, GAT, GCN_Gate')
 parser.add_argument('--cuda', type=bool, default=False)
 parser.add_argument('--train_ratio', type=float, default=.8)
 parser.add_argument('--val_ratio', type=float, default=.1)
@@ -82,8 +82,17 @@ def train(epoch,
                     n_batch=n_batch,
                     dropout=dropout)
 
+    if model_name.lower() == 'gcn_gate':
+        model = GCN_Gate(n_node=n_node,
+                    n_feat=n_feat,
+                    n_hid=n_hid,
+                    n_nlayer=n_nlayer,
+                    n_glayer=n_glayer,
+                    n_batch=n_batch,
+                    dropout=dropout)
+
     if optimizer.lower() == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+        optimizer = optim.Adam(model.parameters(), lr=lr)
 
     if loss.lower() == 'mse':
         loss_fn = nn.MSELoss()
@@ -118,7 +127,7 @@ def train(epoch,
                 for output, Y in zip(output_train, Y_batch):
                     outputs_train.append([output.detach().numpy(),
                                           Y.detach().numpy()])
-
+        
         model.eval()
         for j, batch in enumerate(val_loader):
             X_batch, A_batch, Y_batch = batch
