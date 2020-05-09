@@ -60,8 +60,8 @@ class GCN(CoreModule):
             elif key.startswith('dropout'):
                 X = gc_layer(X)
        
-        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
-        #X = torch.mean(X, dim=1)
+        #X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
+        X = torch.mean(X, dim=1)
 
         X = self.nn_layers(X)
         return(X)
