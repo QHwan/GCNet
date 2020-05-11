@@ -1,6 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 
+import tqdm
 import argparse
 import os
 import numpy as np
@@ -25,6 +26,13 @@ hybridization_list = [Chem.rdchem.HybridizationType.SP,
                       Chem.rdchem.HybridizationType.SP3D2]
 aromatic_list = [0, 1]
 num_h_list = [0, 1, 2, 3, 4]
+
+bond_list = [Chem.rdchem.BondType.SINGLE,
+             Chem.rdchem.BondType.DOUBLE,
+             Chem.rdchem.BondType.TRIPLE,
+             Chem.rdchem.BondType.AROMATIC]
+conjugate_list = [0, 1]
+ring_list = [0, 1]
 
 
 def one_of_k_encoding(x, allowable_set):
@@ -51,6 +59,17 @@ def atom_features(atom, explicit_H=False):
         out += one_of_k_encoding(atom.GetTotalNumHs(),
                                 num_h_list)
     return(out)
+
+
+def bond_features(bond, explicit_H=False):
+    out = one_of_k_encoding(bond.GetBondType(),
+                            bond_list)
+    out += one_of_k_encoding(bond.GetIsConjugated(),
+                            conjugate_list)
+    out += one_of_k_encoding(bond.IsInRing(),
+                            ring_list)
+    return(out)
+
 
 def get_n_nodes(smiles):
     n_atoms = []
@@ -91,28 +110,42 @@ if args.dataset == 'esol':
 n_nodes = get_n_nodes(smiles)
 n_feas = len(atom_list + degree_list + valence_list + formal_charge_list +
              radical_list + hybridization_list + aromatic_list + num_h_list)
+n_edge_feas = len(bond_list + conjugate_list + ring_list)
 
 
-Xs = []; As = []; Ys = []; Ns = []
-for i, smile in enumerate(smiles):
+Xs = []; As = []; Es = []; Ns = []; Ys = []
+for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     mol = Chem.MolFromSmiles(smile)
     atoms = mol.GetAtoms()
+    bonds = mol.GetBonds()
 
     X = np.zeros((n_nodes, n_feas))
     A = np.zeros((n_nodes, n_nodes))
+    E = np.zeros((n_nodes, n_nodes, n_edge_feas))
+    N = len(atoms)
 
     for j, atom in enumerate(atoms):
         X[j] = atom_features(atom)
 
+    for j in range(N):
+        for k in range(N):
+            bond = mol.GetBondBetweenAtoms(j, k)
+            if bond is not None:
+                E[j, k] = bond_features(bond)    
+
     A_mol = GetAdjacencyMatrix(mol)
-    A[0:len(A_mol), 0:len(A_mol)] += A_mol + np.eye(len(A_mol))
+    #A[0:len(A_mol), 0:len(A_mol)] += A_mol + np.eye(len(A_mol))
+    A[0:len(A_mol), 0:len(A_mol)] += A_mol 
     
     Y = outs[i]
-    N = len(atoms)
 
     Xs.append(sp.csr_matrix(X))
     As.append(sp.csr_matrix(A))
+    E_new = []
+    for E_i in E:
+        E_new.append(sp.csr_matrix(E_i))
+    Es.append(E_new) # tricky method, no scipy support
     Ys.append(Y)
     Ns.append(N)
 
-np.savez(ofilename, Xs=Xs, As=As, Ys=Ys, Ns=Ns)
+np.savez(ofilename, Xs=Xs, As=As, Es=Es, Ys=Ys, Ns=Ns)

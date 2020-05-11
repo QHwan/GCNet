@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from layers import GraphConvolution, GraphAttention
+from layers import GraphConvolution, GraphAttention, GatedGraphConvolution
 
 def make_nn_layers(n_nlayer, n_hid, n_feat, dropout):
     nn_module = []
@@ -110,33 +110,30 @@ class GCN_Gate(CoreModule):
         super().__init__(n_node, n_feat, n_hid,
                          n_nlayer, n_glayer, n_batch, dropout)
 
-        self.z = Parameter(torch.ones(n_glayer))
-        self.z.data.uniform_(-1, 1)
-
         self.gc_layers = nn.ModuleDict({})
         for i in range(n_glayer):
-            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_feat, n_feat, n_node, n_batch=n_batch)
+            self.gc_layers['gc{}'.format(i)] = GatedGraphConvolution(n_feat, n_feat, n_node, n_batch=n_batch)
             self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
             if i == n_glayer-1:
                 self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
-    def forward(self, X, A):
+
+    def forward(self, X, A, N):
         graph_layers = []
         graph_layers.append(X)
 
-        idx = 0
-        for key, gc_layer in self.gc_layers.items():
+        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
             if key.startswith('gc'):
                 X = gc_layer(X, A)
             elif key.startswith('relu'):
                 X = gc_layer(X)
-                X_gate = self.z[idx] * X + (1 - self.z[idx]) * graph_layers[idx]
-                graph_layers.append(X_gate)
-                idx += 1
+                graph_layers.append(X)
             elif key.startswith('dropout'):
                 X = gc_layer(X)
        
-        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
+        #X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
+        X = torch.sum(X, dim=1)
+        X = torch.div(X, N.unsqueeze(1))
 
         X = self.nn_layers(X)
         return(X)
