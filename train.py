@@ -10,6 +10,7 @@ from sklearn import metrics
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, random_split
 
 from model import *
@@ -42,6 +43,38 @@ parser.add_argument('--n_batch', type=int, default=8,
                     help='number of mini-batch')
 
 args = parser.parse_args()
+
+
+def batch_train(train_loader,
+    val_loader,
+    model,
+    optimizer,
+    loss_fn):
+
+    loss_train = 0.
+    loss_val = 0.
+
+    model.train()
+    for batch in train_loader:
+        X_batch, A_batch, Y_batch, N_batch = batch
+        optimizer.zero_grad()
+        Y_preds = model(X_batch, A_batch, N_batch)
+        loss = loss_fn(Y_preds.squeeze(), 
+                       Y_batch)
+        loss.backward()
+        optimizer.step()
+        loss_train += loss.data
+
+    model.eval()
+    for batch in val_loader:
+        X_batch, A_batch, Y_batch, N_batch = batch
+        Y_preds = model(X_batch, A_batch, N_batch)
+        loss = loss_fn(Y_preds.squeeze(),
+                       Y_batch)
+        loss.backward()
+        loss_val += loss.data
+
+    return(model, loss_train, loss_val)
 
 
 def train(epoch,
@@ -86,59 +119,46 @@ def train(epoch,
 
     if loss.lower() == 'mse':
         loss_fn = nn.MSELoss()
+
+    scheduler = ReduceLROnPlateau(
+        optimizer,
+        'min',
+        patience=3,
+        factor=0.9,
+        verbose=True)
     
     n_train = len(train_loader)
     n_val = len(val_loader)
 
-    outputs_train = []
     outputs_val = []
-
 
     for i in range(epoch):
         t = time.time()
-        running_loss_train = 0
-        running_loss_val = 0
 
-        model.train()
-        for batch in train_loader:
-            X_batch, A_batch, Y_batch = batch
-
-            optimizer.zero_grad()
-
-            output_train = model(X_batch, A_batch)
-            loss_train = loss_fn(output_train.squeeze(), 
-                                 Y_batch)
-
-            loss_train.backward()
-            optimizer.step()
-            running_loss_train += loss_train.data
-
-            if i == epoch-1:
-                for output, Y in zip(output_train, Y_batch):
-                    outputs_train.append([output.detach().numpy(),
-                                          Y.detach().numpy()])
+        model, loss_train, loss_val = batch_train(train_loader, 
+                                                    val_loader,
+                                                    model,
+                                                    optimizer,
+                                                    loss_fn)
         
+        scheduler.step(loss_val)
         model.eval()
-        for batch in val_loader:
-            X_batch, A_batch, Y_batch = batch
-            output_val = model(X_batch, A_batch)
-            loss_val = loss_fn(output_val.squeeze(),
-                               Y_batch)
-
-            running_loss_val += loss_val.data
-
-            if i == epoch-1:
-                for output, Y in zip(output_val, Y_batch):
-                    outputs_val.append([output.detach().numpy(),
-                                        Y.detach().numpy()])
-
         print('Epoch: {:04d}'.format(i+1),
-            'loss_train: {:.4f}'.format(running_loss_train/n_train),
-            'loss_val: {:.4f}'.format(running_loss_val/n_val),
+            'loss_train: {:.4f}'.format(loss_train/n_train),
+            'loss_val: {:.4f}'.format(loss_val/n_val),
             'time: {:.4f}s'.format(time.time() - t))
 
+    for batch in val_loader:
+        X_batch, A_batch, Y_batch, N_batch = batch
+        Y_preds = model(X_batch, A_batch, N_batch)
+        loss_val = loss_fn(Y_preds.squeeze(),
+                           Y_batch)
 
-    return(np.array(outputs_train), np.array(outputs_val))
+        for Y_pred, Y in zip(Y_preds, Y_batch):
+            outputs_val.append([Y_pred.detach().numpy(),
+                                Y.detach().numpy()])
+
+    return(np.array(outputs_val))
 
 
 def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
@@ -180,15 +200,11 @@ losses_val = np.zeros(n_fold)
 for i in range(n_fold):
     dataset, train_loader, val_loader, test_loader = load_data(npz_file=args.f)
     n_node, n_feat = dataset[0][0].shape
-    outputs_train, outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
-                                    n_feat=n_feat, n_node=n_node, n_batch=args.n_batch)
-    outputs_train *= dataset.norm_value
+    outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
+                         n_feat=n_feat, n_node=n_node, n_batch=args.n_batch)
     outputs_val *= dataset.norm_value
-
-    losses_train[i] = cal_loss(outputs_train, kind='rmse')
     losses_val[i] = cal_loss(outputs_val, kind='rmse')
 
-print('Train error: {} +- {}'.format(np.mean(losses_train), np.std(losses_train)))
 print('Validation error: {} +- {}'.format(np.mean(losses_val), np.std(losses_val)))
 
 x = np.linspace(-0.2*dataset.norm_value, dataset.norm_value, 100)

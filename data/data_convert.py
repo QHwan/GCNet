@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import os
 import numpy as np
 import scipy.sparse as sp
 import pandas as pd
@@ -72,7 +73,8 @@ if args.dataset.lower() not in dataset_dict.keys():
     print("Choose supported datasets.")
     exit(1)
 
-ifilename, ofilename = './dataset/' + dataset_dict[args.dataset.lower()]
+ifilename = os.path.join('dataset', dataset_dict[args.dataset.lower()][0])
+ofilename = os.path.join('dataset', dataset_dict[args.dataset.lower()][1])
 
 raw_dataset = pd.read_csv(ifilename)
 if args.dataset == 'freesolv':
@@ -91,7 +93,7 @@ n_feas = len(atom_list + degree_list + valence_list + formal_charge_list +
              radical_list + hybridization_list + aromatic_list + num_h_list)
 
 
-Xs = []; As = []; Ys = []
+Xs = []; As = []; Ys = []; Ns = []
 for i, smile in enumerate(smiles):
     mol = Chem.MolFromSmiles(smile)
     atoms = mol.GetAtoms()
@@ -106,10 +108,11 @@ for i, smile in enumerate(smiles):
     A[0:len(A_mol), 0:len(A_mol)] += A_mol + np.eye(len(A_mol))
     
     Y = outs[i]
+    N = len(atoms)
 
     Xs.append(sp.csr_matrix(X))
     As.append(sp.csr_matrix(A))
     Ys.append(Y)
+    Ns.append(N)
 
-
-np.savez(ofilename, Xs=Xs, As=As, Ys=Ys)
+np.savez(ofilename, Xs=Xs, As=As, Ys=Ys, Ns=Ns)

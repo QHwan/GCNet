@@ -11,6 +11,7 @@ class GraphDataset(Dataset):
         self.Xs = self.file['Xs']
         self.As = self.file['As']
         self.Ys = self.file['Ys']
+        self.Ns = self.file['Ns']
 
         # Y normalization
         if abs(np.max(self.Ys)) > abs(np.min(self.Ys)):
@@ -26,4 +27,5 @@ class GraphDataset(Dataset):
     def __getitem__(self, idx):
         return((self.Xs[idx].toarray().astype(np.float32),
                 self.As[idx].toarray().astype(np.float32),
-                self.Ys[idx].astype(np.float32)))
+                self.Ys[idx].astype(np.float32),
+                self.Ns[idx].astype(np.float32)))

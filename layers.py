@@ -56,7 +56,7 @@ class GraphAttention(CoreLayer):
     def attention(self, XW):
         XWT = XW.permute(0, 2, 1)
         buf = torch.einsum("ij,ajk->ajk", (self.a, XWT))
-        Z = torch.einsum("aij,ajk->aik", (XW, buf))
+        Z = torch.einsum("aij,ajk->aik", (XW, buf)) + self.bias_a
         return(F.relu(Z))
 
     def forward(self, X, A): 

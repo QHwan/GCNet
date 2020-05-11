@@ -47,7 +47,7 @@ class GCN(CoreModule):
             if i == n_glayer-1:
                 self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
-    def forward(self, X, A):
+    def forward(self, X, A, N):
         graph_layers = []
         graph_layers.append(X)
 
@@ -61,7 +61,8 @@ class GCN(CoreModule):
                 X = gc_layer(X)
        
         #X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
-        X = torch.mean(X, dim=1)
+        X = torch.sum(X, dim=1)
+        X = torch.div(X, N.unsqueeze(1))
 
         X = self.nn_layers(X)
         return(X)
@@ -81,7 +82,7 @@ class GAT(CoreModule):
             if i == n_glayer-1:
                 self.gat_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
-    def forward(self, X, A):
+    def forward(self, X, A, N):
         graph_layers = []
         graph_layers.append(X)
 
@@ -94,7 +95,9 @@ class GAT(CoreModule):
             elif key.startswith('dropout'):
                 X = gat_layer(X)
        
-        X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
+        X = torch.mean(torch.stack(graph_layers), dim=0)
+        X = torch.sum(X, dim=1)
+        X = torch.div(X, N.unsqueeze(1))
 
         X = self.nn_layers(X)
         return(X)
