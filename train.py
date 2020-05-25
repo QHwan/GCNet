@@ -11,16 +11,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, random_split, Subset
+
 
 from model import *
-from data.data_prepare import GraphDataset
+from data.data_prepare import GraphDataset, load_data
 
 
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--f', type=str)
-parser.add_argument('--epochs', type=int, default=200,
+parser.add_argument('--n_epoch', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=1e-3,
                     help='Initial learning rate.')
@@ -34,111 +34,45 @@ parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
 parser.add_argument('--model', type=str, default='GCN',
                     help='Network Model: GCN, GAT, GCN_Gate')
+parser.add_argument('--optimizer', type=str, default='Adam')
+parser.add_argument('--loss_fn', type=str, default='mse')
 parser.add_argument('--cuda', type=bool, default=False)
 parser.add_argument('--train_ratio', type=float, default=.8)
 parser.add_argument('--val_ratio', type=float, default=.1)
-parser.add_argument('--n_fold', type=int, default=5,
-                    help='number of repetitive training for error valuation')
 parser.add_argument('--n_batch', type=int, default=8,
                     help='number of mini-batch')
 
 args = parser.parse_args()
+params = vars(args)
 
 
-model_args = {'n_node': n_node,
-                'n_node_fea': n_node_fea,
-                'n_edge_fea': n_edge_fea,
-                'n_hid': n_hid,
-                'n_nlayer': n_nlayer,
-                'n_glayer': n_glayer,
-                'n_batch': n_batch,
-                'dropout': dropout}
-
-class NeuralNetwork:
-    def __init__(input_file=):
-
-
-def batch_train(train_loader,
-    val_loader,
-    model,
-    optimizer,
-    loss_fn):
-
-    loss_train = 0.
-    loss_val = 0.
-
-    model.train()
-    for batch in train_loader:
-        X_batch, A_batch, E_batch, N_batch, Y_batch = batch
-        optimizer.zero_grad()
-        Y_preds = model(X_batch, A_batch, E_batch, N_batch)
-        loss = loss_fn(Y_preds.squeeze(), 
-                       Y_batch)
-        loss.backward()
-        optimizer.step()
-        loss_train += loss.data
-
-    model.eval()
-    for batch in val_loader:
-        X_batch, A_batch, E_batch, N_batch, Y_batch = batch
-        Y_preds = model(X_batch, A_batch, E_batch, N_batch)
-        loss = loss_fn(Y_preds.squeeze(),
-                       Y_batch)
-        loss.backward()
-        loss_val += loss.data
-
-    return(model, loss_train, loss_val)
-
-
-def train(epoch,
-          train_loader,
+def train(train_loader,
           val_loader,
           test_loader,
-          n_node,
-          n_node_fea,
-          n_edge_fea,
-          n_nlayer=args.n_nlayer,
-          n_glayer=args.n_glayer,
-          n_batch=args.n_batch,
-          model_name=args.model,
-          optimizer='Adam',
-          loss='mse',
-          n_hid=args.n_hid,
-          dropout=args.dropout,
-          lr=args.lr):
+          params):
 
-    if len(n_hid) != n_nlayer:
-        print("# of hidden layers != length of hidden unit list")
-        exit(1)
+    if params['model'].lower() == 'gcn':
+        model = GCN(params)
 
-    model_args = {'n_node': n_node,
-                  'n_node_fea': n_node_fea,
-                  'n_edge_fea': n_edge_fea,
-                  'n_hid': n_hid,
-                  'n_nlayer': n_nlayer,
-                  'n_glayer': n_glayer,
-                  'n_batch': n_batch,
-                  'dropout': dropout}
+    elif params['model'].lower() == 'gat':
+        model = GAT(params)
 
-    if model_name.lower() == 'gcn':
-        model = GCN(**model_args)
+    elif params['model'].lower() == 'gcn_gate':
+        model = GCN_Gate(params)
 
-    if model_name.lower() == 'gat':
-        model = GAT(**model_args)
+    elif params['model'].lower() == 'mpnn':
+        model = MPNN(params)
 
-    if model_name.lower() == 'gcn_gate':
-        model = GCN_Gate(**model_args)
+    elif params['model'].lower() == 'gat_mpnn':
+        model = GAT_MPNN(params)
 
-    if model_name.lower() == 'mpnn':
-        model = MPNN(**model_args)
+    if params['optimizer'].lower() == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=params['lr'])
 
-    if model_name.lower() == 'gat_mpnn':
-        model = GAT_MPNN(**model_args)
+    elif params['optimizer'].lower() == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=params['lr'])
 
-    if optimizer.lower() == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=lr)
-
-    if loss.lower() == 'mse':
+    if params['loss_fn'].lower() == 'mse':
         loss_fn = nn.MSELoss()
 
     scheduler = ReduceLROnPlateau(
@@ -150,65 +84,90 @@ def train(epoch,
     
     n_train = len(train_loader)
     n_val = len(val_loader)
+    best_mae_error = 1e8
 
-    outputs_val = []
-
-    for i in range(epoch):
+    for i in range(params['n_epoch']):
+        outputs_val = []
         t = time.time()
 
-        model, loss_train, loss_val = batch_train(train_loader, 
-                                                    val_loader,
-                                                    model,
-                                                    optimizer,
-                                                    loss_fn)
+        loss_train = 0.
+        loss_val = 0.
+
+        model.train()
+        for batch in train_loader:
+            X_batch, A_batch, E_batch, N_batch, Y_batch = batch
+            optimizer.zero_grad()
+            Y_preds = model(X_batch, A_batch, E_batch, N_batch)
+            loss = loss_fn(Y_preds.squeeze(), 
+                        Y_batch)
+            loss.backward()
+            optimizer.step()
+            loss_train += loss.data
+
+        model.eval()
+        for batch in val_loader:
+            X_batch, A_batch, E_batch, N_batch, Y_batch = batch
+            Y_preds = model(X_batch, A_batch, E_batch, N_batch)
+            loss = loss_fn(Y_preds.squeeze(),
+                        Y_batch)
+            loss.backward()
+            loss_val += loss.data
+
+            for Y_pred, Y in zip(Y_preds, Y_batch):
+                outputs_val.append([Y_pred.detach().numpy(),
+                                    Y.detach().numpy()])
+
+        mae_error = cal_loss(np.array(outputs_val)*params['norm_value'], kind='mae')
         
         scheduler.step(loss_val)
-        model.eval()
+        #model.eval()
         print('Epoch: {:04d}'.format(i+1),
             'loss_train: {:.4f}'.format(loss_train/n_train),
             'loss_val: {:.4f}'.format(loss_val/n_val),
+            'MAE_val: {:.4f}'.format(mae_error),
             'time: {:.4f}s'.format(time.time() - t))
 
-    for batch in val_loader:
+        is_best = mae_error < best_mae_error
+        best_mae_error = min(mae_error, best_mae_error)
+        if is_best:
+            save_best_model({
+                'epoch': i + 1,
+                'state_dict': model.state_dict(),
+                'best_mae_error': best_mae_error,
+                'optimizer': optimizer.state_dict(),
+                'params': params,
+            })
+
+    # test best model
+    best_model = torch.load('pretrained/best_model.pth.tar')
+    model.load_state_dict(best_model['state_dict'])
+    model.eval()
+    outputs_test = []
+    for batch in test_loader:
         X_batch, A_batch, E_batch, N_batch, Y_batch = batch
         Y_preds = model(X_batch, A_batch, E_batch, N_batch)
-        loss_val = loss_fn(Y_preds.squeeze(),
-                           Y_batch)
+        loss = loss_fn(Y_preds.squeeze(),
+                    Y_batch)
+        loss.backward()
+        loss_val += loss.data
 
         for Y_pred, Y in zip(Y_preds, Y_batch):
-            outputs_val.append([Y_pred.detach().numpy(),
-                                Y.detach().numpy()])
+            outputs_test.append([Y_pred.detach().numpy(),
+                                Y.detach().numpy()])   
 
-    return(np.array(outputs_val))
+    return(np.array(outputs_test))
 
-
-def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
-    dataset = GraphDataset(npz_file=npz_file)
-    n_data = len(dataset)
-    n_train = int(n_data*train_ratio)
-    n_val = int(n_data*val_ratio)
-    n_test = n_data - n_train - n_val
-    
-    #trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
-    trainset = Subset(dataset, list(range(n_train)))
-    valset = Subset(dataset, list(range(n_train, n_train+n_val)))
-    testset = Subset(dataset, list(range(n_train+n_val, n_train+n_val+n_test)))
-
-    dataloader_args = {'batch_size': args.n_batch,
-                       'shuffle': True,
-                       'pin_memory': False,
-                       'drop_last': False}
-
-    train_loader = DataLoader(trainset, **dataloader_args)
-    val_loader = DataLoader(valset, **dataloader_args)
-    test_loader = DataLoader(testset, **dataloader_args)
-
-    return(dataset, train_loader, val_loader, test_loader)
 
 
 def cal_loss(x, kind):
     if kind.lower() == 'rmse':
         return(metrics.mean_squared_error(x[:,0], x[:,1], squared=False))
+
+    elif kind.lower() == 'mae':
+        return(metrics.mean_absolute_error(x[:,0], x[:,1]))
+
+def save_best_model(state, filename='pretrained/best_model.pth.tar'):
+    torch.save(state, filename)
 
 
 # Train model
@@ -217,24 +176,19 @@ torch.manual_seed(int(time.time()))
 
 t_total = time.time()
 
-n_fold = args.n_fold
-losses_train = np.zeros(n_fold)
-losses_val = np.zeros(n_fold)
+dataset, train_loader, val_loader, test_loader = load_data(params)
+params['norm_value'] = dataset.norm_value 
+params['n_node'], params['n_node_fea'] = dataset.Xs[0].shape
+_, _, params['n_edge_fea'] = dataset.Es[0].shape
+outputs_test = train(train_loader, val_loader, test_loader, params)
+outputs_test *= params['norm_value']
+losses_val = cal_loss(outputs_test, kind='mae')
 
-for i in range(n_fold):
-    dataset, train_loader, val_loader, test_loader = load_data(npz_file=args.f)
-    n_node, n_node_fea = dataset.Xs[0].shape
-    _, _, n_edge_fea = dataset.Es[0].shape
-    outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
-                         n_node_fea=n_node_fea, n_edge_fea=n_edge_fea, n_node=n_node, n_batch=args.n_batch)
-    outputs_val *= dataset.norm_value
-    losses_val[i] = cal_loss(outputs_val, kind='rmse')
+print('Test error: {} +- {}'.format(losses_val, 0))
 
-print('Validation error: {} +- {}'.format(np.mean(losses_val), np.std(losses_val)))
-
-x = np.linspace(-0.2*dataset.norm_value, dataset.norm_value, 100)
+x = np.linspace(-0.2*params['norm_value'], params['norm_value'], 100)
 fig, ax = plt.subplots(nrows=1, ncols=1)
-ax.scatter(outputs_val[:,0], outputs_val[:,1], s=10, alpha=.5)
+ax.scatter(outputs_test[:,0], outputs_test[:,1], s=10, alpha=.5)
 ax.plot(x, x)
 ax.set_xlabel('Prediction (kcal/mol)')
 ax.set_ylabel('Experiment (kcal/mol)')

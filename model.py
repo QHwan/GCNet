@@ -21,29 +21,27 @@ def make_nn_layers(n_nlayer, n_hid, n_feat, dropout):
 
 
 class CoreModule(nn.Module):
-    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
-                 n_nlayer, n_glayer, n_batch, dropout):
+    def __init__(self, params):
         super(CoreModule, self).__init__()
-        self.n_node = n_node
-        self.n_node_fea = n_node_fea
-        self.n_edge_fea = n_edge_fea
-        self.n_hid = n_hid
-        self.n_nlayer = n_nlayer
-        self.n_glayer = n_glayer
-        self.n_batch = n_batch
-        self.dropout = dropout
+        self.n_node = params['n_node']
+        self.n_node_fea = params['n_node_fea']
+        self.n_edge_fea = params['n_edge_fea']
+        self.n_hid = params['n_hid']
+        self.n_nlayer = params['n_nlayer']
+        self.n_glayer = params['n_glayer']
+        self.n_batch = params['n_batch']
+        self.dropout = params['dropout']
 
-        self.nn_layers = make_nn_layers(n_nlayer, n_hid, n_node_fea, dropout)
+        self.nn_layers = make_nn_layers(self.n_nlayer, self.n_hid, self.n_node_fea, self.dropout)
 
 class GCN(CoreModule):
-    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
-                 n_nlayer, n_glayer, n_batch, dropout):
-        super().__init__(n_node, n_node_fea, n_edge_fea, n_hid,
-                         n_nlayer, n_glayer, n_batch, dropout)
+    def __init__(self, params):
+        super().__init__(params)
 
         self.gc_layers = nn.ModuleDict({})
-        for i in range(n_glayer):
-            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_node_fea, n_node_fea, n_node, n_batch=n_batch)
+        for i in range(self.n_glayer):
+            self.gc_layers['gc{}'.format(i)] = GraphConvolution(self.n_node_fea, self.n_node_fea, self.n_node,
+                                                                n_batch=self.n_batch)
             self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
             #if i == n_glayer-1:
             #    self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
@@ -57,13 +55,9 @@ class GCN(CoreModule):
                 X = gc_layer(X, A)
             elif key.startswith('relu'):
                 X = X + gc_layer(X)  ## residual network
-                #X = gc_layer(X)
                 graph_layers.append(X)
             elif key.startswith('dropout'):
                 X = gc_layer(X)
-        #print(X.shape, N.shape)
-        #X = torch.stack(graph_layers, dim=0)
-        #X = torch.mean(X, dim=0)
         X = torch.sum(X, dim=1)
         X = torch.div(X, N.unsqueeze(1))
 
