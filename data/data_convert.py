@@ -5,7 +5,7 @@ import tqdm
 import argparse
 import os
 import numpy as np
-import scipy.sparse as sp
+import sparse 
 import pandas as pd
 from collections import Counter
 
@@ -71,7 +71,7 @@ def bond_features(bond, explicit_H=False):
     return(out)
 
 
-def get_n_nodes(smiles):
+def get_max_n_nodes(smiles):
     n_atoms = []
     for smile in smiles:
         mol = Chem.MolFromSmiles(smile)
@@ -107,7 +107,7 @@ if args.dataset == 'esol':
     smiles = np.array(raw_dataset['smiles'])
     outs = np.array(raw_dataset['measured log solubility in mols per litre'])
 
-n_nodes = get_n_nodes(smiles)
+max_n_nodes = get_max_n_nodes(smiles)
 n_feas = len(atom_list + degree_list + valence_list + formal_charge_list +
              radical_list + hybridization_list + aromatic_list + num_h_list)
 n_edge_feas = len(bond_list + conjugate_list + ring_list)
@@ -119,9 +119,11 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     atoms = mol.GetAtoms()
     bonds = mol.GetBonds()
 
-    X = np.zeros((n_nodes, n_feas))
-    A = np.zeros((n_nodes, n_nodes))
-    E = np.zeros((n_nodes, n_nodes, n_edge_feas))
+    n_nodes = len(atoms)
+
+    X = np.zeros((max_n_nodes, n_feas))
+    A = np.zeros((max_n_nodes, max_n_nodes))
+    E = np.zeros((max_n_nodes, max_n_nodes, n_edge_feas))
     N = len(atoms)
 
     for j, atom in enumerate(atoms):
@@ -139,13 +141,13 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     
     Y = outs[i]
 
-    Xs.append(sp.csr_matrix(X))
-    As.append(sp.csr_matrix(A))
-    E_new = []
-    for E_i in E:
-        E_new.append(sp.csr_matrix(E_i))
-    Es.append(E_new) # tricky method, no scipy support
+    #Xs.append(sparse.COO(X))
+    #As.append(sparse.COO(A))
+    #Es.append(sparse.COO(E))
+    Xs.append((X))
+    As.append((A))
+    Es.append((E))
     Ys.append(Y)
     Ns.append(N)
 
-np.savez(ofilename, Xs=Xs, As=As, Es=Es, Ys=Ys, Ns=Ns)
+np.savez_compressed(ofilename, Xs=Xs, As=As, Es=Es, Ys=Ys, Ns=Ns, max_n_nodes=max_n_nodes)

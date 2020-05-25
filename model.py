@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from layers import GraphConvolution, GraphAttention, GatedGraphConvolution
+from layers import *
 
 def make_nn_layers(n_nlayer, n_hid, n_feat, dropout):
     nn_module = []
@@ -21,33 +21,34 @@ def make_nn_layers(n_nlayer, n_hid, n_feat, dropout):
 
 
 class CoreModule(nn.Module):
-    def __init__(self, n_node, n_feat, n_hid,
+    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
                  n_nlayer, n_glayer, n_batch, dropout):
         super(CoreModule, self).__init__()
         self.n_node = n_node
-        self.n_feat = n_feat
+        self.n_node_fea = n_node_fea
+        self.n_edge_fea = n_edge_fea
         self.n_hid = n_hid
         self.n_nlayer = n_nlayer
         self.n_glayer = n_glayer
         self.n_batch = n_batch
         self.dropout = dropout
 
-        self.nn_layers = make_nn_layers(n_nlayer, n_hid, n_feat, dropout)
+        self.nn_layers = make_nn_layers(n_nlayer, n_hid, n_node_fea, dropout)
 
 class GCN(CoreModule):
-    def __init__(self, n_node, n_feat, n_hid,
+    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
                  n_nlayer, n_glayer, n_batch, dropout):
-        super().__init__(n_node, n_feat, n_hid,
+        super().__init__(n_node, n_node_fea, n_edge_fea, n_hid,
                          n_nlayer, n_glayer, n_batch, dropout)
 
         self.gc_layers = nn.ModuleDict({})
         for i in range(n_glayer):
-            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_feat, n_feat, n_node, n_batch=n_batch)
+            self.gc_layers['gc{}'.format(i)] = GraphConvolution(n_node_fea, n_node_fea, n_node, n_batch=n_batch)
             self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
-            if i == n_glayer-1:
-                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
+            #if i == n_glayer-1:
+            #    self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
-    def forward(self, X, A, N):
+    def forward(self, X, A, E, N):
         graph_layers = []
         graph_layers.append(X)
 
@@ -55,12 +56,81 @@ class GCN(CoreModule):
             if key.startswith('gc'):
                 X = gc_layer(X, A)
             elif key.startswith('relu'):
-                X = gc_layer(X)
+                X = X + gc_layer(X)  ## residual network
+                #X = gc_layer(X)
                 graph_layers.append(X)
             elif key.startswith('dropout'):
                 X = gc_layer(X)
-       
-        #X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
+        #print(X.shape, N.shape)
+        #X = torch.stack(graph_layers, dim=0)
+        #X = torch.mean(X, dim=0)
+        X = torch.sum(X, dim=1)
+        X = torch.div(X, N.unsqueeze(1))
+
+        X = self.nn_layers(X)
+        return(X)
+
+class MPNN(CoreModule):
+    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
+                 n_nlayer, n_glayer, n_batch, dropout):
+        super().__init__(n_node, n_node_fea, n_edge_fea, n_hid,
+                         n_nlayer, n_glayer, n_batch, dropout)
+
+        self.gc_layers = nn.ModuleDict({})
+        for i in range(n_glayer):
+            self.gc_layers['gc{}'.format(i)] = MessagePassing(n_node_fea, n_edge_fea, n_node, n_batch=n_batch)
+            self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
+            #if i == n_glayer-1:
+            #    self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
+
+    def forward(self, X, A, E, N):
+        graph_layers = []
+        graph_layers.append(X)
+
+        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
+            if key.startswith('gc'):
+                X = gc_layer(X, A, E, N)
+            elif key.startswith('relu'):
+                X = X + gc_layer(X)  ## residual network
+                #X = gc_layer(X)
+                graph_layers.append(X)
+            elif key.startswith('dropout'):
+                X = gc_layer(X)
+        #print(X.shape, N.shape)
+        #X = torch.stack(graph_layers, dim=0)
+        #X = torch.mean(X, dim=0)
+        X = torch.sum(X, dim=1)
+        X = torch.div(X, N.unsqueeze(1))
+
+        X = self.nn_layers(X)
+        return(X)
+
+
+class GAT_MPNN(CoreModule):
+    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
+                 n_nlayer, n_glayer, n_batch, dropout):
+        super().__init__(n_node, n_node_fea, n_edge_fea, n_hid,
+                         n_nlayer, n_glayer, n_batch, dropout)
+
+        self.gc_layers = nn.ModuleDict({})
+        for i in range(n_glayer):
+            self.gc_layers['gc{}'.format(i)] = AttentionMessagePassing(n_node_fea, n_edge_fea, n_node, n_batch=n_batch)
+            if i == n_glayer-1:
+                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
+
+    def forward(self, X, A, E, N):
+        graph_layers = []
+        graph_layers.append(X)
+
+        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
+            if key.startswith('gc'):
+                X = X + gc_layer(X, A, E, N)
+                graph_layers.append(X)
+            elif key.startswith('dropout'):
+                X = gc_layer(X)
+        #print(X.shape, N.shape)
+        #X = torch.stack(graph_layers, dim=0)
+        #X = torch.mean(X, dim=0)
         X = torch.sum(X, dim=1)
         X = torch.div(X, N.unsqueeze(1))
 

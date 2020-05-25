@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, Subset
 
 from model import *
 from data.data_prepare import GraphDataset
@@ -45,6 +45,19 @@ parser.add_argument('--n_batch', type=int, default=8,
 args = parser.parse_args()
 
 
+model_args = {'n_node': n_node,
+                'n_node_fea': n_node_fea,
+                'n_edge_fea': n_edge_fea,
+                'n_hid': n_hid,
+                'n_nlayer': n_nlayer,
+                'n_glayer': n_glayer,
+                'n_batch': n_batch,
+                'dropout': dropout}
+
+class NeuralNetwork:
+    def __init__(input_file=):
+
+
 def batch_train(train_loader,
     val_loader,
     model,
@@ -56,9 +69,9 @@ def batch_train(train_loader,
 
     model.train()
     for batch in train_loader:
-        X_batch, A_batch, Y_batch, N_batch = batch
+        X_batch, A_batch, E_batch, N_batch, Y_batch = batch
         optimizer.zero_grad()
-        Y_preds = model(X_batch, A_batch, N_batch)
+        Y_preds = model(X_batch, A_batch, E_batch, N_batch)
         loss = loss_fn(Y_preds.squeeze(), 
                        Y_batch)
         loss.backward()
@@ -67,8 +80,8 @@ def batch_train(train_loader,
 
     model.eval()
     for batch in val_loader:
-        X_batch, A_batch, Y_batch, N_batch = batch
-        Y_preds = model(X_batch, A_batch, N_batch)
+        X_batch, A_batch, E_batch, N_batch, Y_batch = batch
+        Y_preds = model(X_batch, A_batch, E_batch, N_batch)
         loss = loss_fn(Y_preds.squeeze(),
                        Y_batch)
         loss.backward()
@@ -82,7 +95,8 @@ def train(epoch,
           val_loader,
           test_loader,
           n_node,
-          n_feat,
+          n_node_fea,
+          n_edge_fea,
           n_nlayer=args.n_nlayer,
           n_glayer=args.n_glayer,
           n_batch=args.n_batch,
@@ -98,7 +112,8 @@ def train(epoch,
         exit(1)
 
     model_args = {'n_node': n_node,
-                  'n_feat': n_feat,
+                  'n_node_fea': n_node_fea,
+                  'n_edge_fea': n_edge_fea,
                   'n_hid': n_hid,
                   'n_nlayer': n_nlayer,
                   'n_glayer': n_glayer,
@@ -114,6 +129,12 @@ def train(epoch,
     if model_name.lower() == 'gcn_gate':
         model = GCN_Gate(**model_args)
 
+    if model_name.lower() == 'mpnn':
+        model = MPNN(**model_args)
+
+    if model_name.lower() == 'gat_mpnn':
+        model = GAT_MPNN(**model_args)
+
     if optimizer.lower() == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -123,7 +144,7 @@ def train(epoch,
     scheduler = ReduceLROnPlateau(
         optimizer,
         'min',
-        patience=3,
+        patience=10,
         factor=0.9,
         verbose=True)
     
@@ -149,8 +170,8 @@ def train(epoch,
             'time: {:.4f}s'.format(time.time() - t))
 
     for batch in val_loader:
-        X_batch, A_batch, Y_batch, N_batch = batch
-        Y_preds = model(X_batch, A_batch, N_batch)
+        X_batch, A_batch, E_batch, N_batch, Y_batch = batch
+        Y_preds = model(X_batch, A_batch, E_batch, N_batch)
         loss_val = loss_fn(Y_preds.squeeze(),
                            Y_batch)
 
@@ -168,12 +189,15 @@ def load_data(npz_file, train_ratio=args.train_ratio, val_ratio=args.val_ratio):
     n_val = int(n_data*val_ratio)
     n_test = n_data - n_train - n_val
     
-    trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
+    #trainset, valset, testset = random_split(dataset, [n_train, n_val, n_test])
+    trainset = Subset(dataset, list(range(n_train)))
+    valset = Subset(dataset, list(range(n_train, n_train+n_val)))
+    testset = Subset(dataset, list(range(n_train+n_val, n_train+n_val+n_test)))
 
     dataloader_args = {'batch_size': args.n_batch,
                        'shuffle': True,
                        'pin_memory': False,
-                       'drop_last': True}
+                       'drop_last': False}
 
     train_loader = DataLoader(trainset, **dataloader_args)
     val_loader = DataLoader(valset, **dataloader_args)
@@ -199,9 +223,10 @@ losses_val = np.zeros(n_fold)
 
 for i in range(n_fold):
     dataset, train_loader, val_loader, test_loader = load_data(npz_file=args.f)
-    n_node, n_feat = dataset[0][0].shape
+    n_node, n_node_fea = dataset.Xs[0].shape
+    _, _, n_edge_fea = dataset.Es[0].shape
     outputs_val = train(args.epochs, train_loader, val_loader, test_loader,
-                         n_feat=n_feat, n_node=n_node, n_batch=args.n_batch)
+                         n_node_fea=n_node_fea, n_edge_fea=n_edge_fea, n_node=n_node, n_batch=args.n_batch)
     outputs_val *= dataset.norm_value
     losses_val[i] = cal_loss(outputs_val, kind='rmse')
 

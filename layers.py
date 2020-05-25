@@ -15,24 +15,84 @@ class CoreLayer(nn.Module):
         self.n_node = n_node
         self.n_batch = n_batch
 
-    def reset_parameters_uniform(self, x, bias):
-        stdv = 1. / math.sqrt(x.size(1))
+    def reset_parameters_uniform(self, x):
+        stdv = 1. / math.sqrt(x.size(0))
         x.data.uniform_(-stdv, stdv)
-        bias.data.uniform_(-stdv, stdv)
+        #nn.init.xavier_uniform_(x, gain=1.414)
 
 
 class GraphConvolution(CoreLayer):
     def __init__(self, n_fea_in, n_fea_out, n_node, n_batch):
         super().__init__(n_fea_in, n_fea_out, n_node, n_batch)
-        self.W = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
-        self.bias_W = Parameter(torch.FloatTensor(n_fea_out))
+        self.W_self = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
+        self.W_nei = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
+        self.bias = Parameter(torch.FloatTensor(n_fea_out))
         
-        self.reset_parameters_uniform(self.W, self.bias_W)
+        self.reset_parameters_uniform(self.W_self)
+        self.reset_parameters_uniform(self.W_nei)
+        self.reset_parameters_uniform(self.bias)
 
-    def forward(self, X, A):
-        buf = torch.einsum("abc,cd->abd", (X, self.W))
-        H = torch.bmm(A, buf) + self.bias_W
-        return(H)
+    def forward(self, H, A):
+        H_filtered_self = torch.einsum("aij,jk->aik", (H, self.W_self)) 
+
+        H_filtered_nei = torch.einsum("aij,jk->aik", (H, self.W_nei)) 
+        H_filtered_nei = torch.bmm(A, H_filtered_nei) 
+        H1 = H_filtered_self + H_filtered_nei + self.bias
+        return(H1)
+
+
+class MessagePassing(CoreLayer):
+    def __init__(self, n_node_fea, n_edge_fea, n_node, n_batch):
+        super().__init__(n_node_fea, n_edge_fea, n_node, n_batch)
+        self.W_nei = Parameter(torch.FloatTensor(2*n_node_fea+n_edge_fea, n_node_fea))
+        self.bias = Parameter(torch.FloatTensor(n_node_fea))
+        
+        self.reset_parameters_uniform(self.W_nei)
+        self.reset_parameters_uniform(self.bias)
+
+    def concat_H_E(self, H, E):
+        H2 = H.unsqueeze(2).repeat(1, 1, self.n_node, 1)
+        H1 = H.unsqueeze(1).repeat(1, self.n_node, 1, 1)
+        return(torch.cat((H2, H1, E), 3))
+
+    def forward(self, H, A, E, N):
+        HE = self.concat_H_E(H, E)
+        HE = A.unsqueeze(3) * HE      
+        HE = torch.sum(HE, dim=2)
+
+        H_filtered_nei = torch.einsum("aij,jk->aik", (HE, self.W_nei)) 
+        H_filtered_nei = torch.bmm(A, H_filtered_nei) 
+        H1 = H_filtered_nei + self.bias
+        return(H1)
+
+
+class AttentionMessagePassing(CoreLayer):
+    def __init__(self, n_node_fea, n_edge_fea, n_node, n_batch):
+        super().__init__(n_node_fea, n_edge_fea, n_node, n_batch)
+        self.W_att = Parameter(torch.FloatTensor(2*n_node_fea+n_edge_fea, n_node_fea))
+        self.W_nei = Parameter(torch.FloatTensor(2*n_node_fea+n_edge_fea, n_node_fea))
+        self.bias_att = Parameter(torch.FloatTensor(n_node_fea))
+        self.bias_nei = Parameter(torch.FloatTensor(n_node_fea))
+        
+        self.reset_parameters_uniform(self.W_att)
+        self.reset_parameters_uniform(self.W_nei)
+        self.reset_parameters_uniform(self.bias_att)
+        self.reset_parameters_uniform(self.bias_nei)
+
+    def concat_H_E(self, H, E):
+        H2 = H.unsqueeze(2).repeat(1, 1, self.n_node, 1)
+        H1 = H.unsqueeze(1).repeat(1, self.n_node, 1, 1)
+        return(torch.cat((H2, H1, E), 3))
+
+    def forward(self, H, A, E, N):
+        HE = self.concat_H_E(H, E)
+        HE = A.unsqueeze(3) * HE
+        HE_att = torch.einsum("aijk,kl->aijl", (HE, self.W_att)) + self.bias_att
+        HE_conv = torch.einsum("aijk,kl->aijl", (HE, self.W_nei)) + self.bias_nei
+        HE1 = F.sigmoid(HE_att) * F.relu(HE_conv)
+        HE1 = torch.sum(HE1, dim=1)
+        return(HE1)
+
 
 
 class GatedGraphConvolution(CoreLayer):
