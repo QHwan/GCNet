@@ -190,10 +190,12 @@ t_total = time.time()
 dataset, train_loader, val_loader, test_loader = load_data(params)
 params['norm_value'] = dataset.norm_value 
 params['n_node'], params['n_node_fea'] = dataset.Xs[0].shape
-_, _, params['n_edge_fea'] = dataset.Es[0].shape
+params['n_edge_fea'] = len(list(dataset.Es[0].values())[0])
+
 outputs_test = train(train_loader, val_loader, test_loader, params)
 outputs_test *= params['norm_value']
 losses_val = cal_loss(outputs_test, kind='mae')
+
 
 print('Test error: {} +- {}'.format(losses_val, 0))
 

@@ -123,7 +123,7 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
 
     X = np.zeros((max_n_nodes, n_feas))
     A = np.zeros((max_n_nodes, max_n_nodes))
-    E = np.zeros((max_n_nodes, max_n_nodes, n_edge_feas))
+    E = {}
     N = len(atoms)
 
     for j, atom in enumerate(atoms):
@@ -133,17 +133,13 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
         for k in range(N):
             bond = mol.GetBondBetweenAtoms(j, k)
             if bond is not None:
-                E[j, k] = bond_features(bond)    
+                E[(j,k)] = np.array(bond_features(bond)) 
 
     A_mol = GetAdjacencyMatrix(mol)
-    #A[0:len(A_mol), 0:len(A_mol)] += A_mol + np.eye(len(A_mol))
     A[0:len(A_mol), 0:len(A_mol)] += A_mol 
     
     Y = outs[i]
 
-    #Xs.append(sparse.COO(X))
-    #As.append(sparse.COO(A))
-    #Es.append(sparse.COO(E))
     Xs.append((X))
     As.append((A))
     Es.append((E))

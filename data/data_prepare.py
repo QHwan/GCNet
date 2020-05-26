@@ -4,6 +4,7 @@ from __future__ import print_function
 import random
 import numpy as np
 import sparse
+import torch
 from torch.utils.data import Dataset, DataLoader, random_split, Subset
 
 class GraphDataset(Dataset):
@@ -28,11 +29,35 @@ class GraphDataset(Dataset):
         return(len(self.Xs))
 
     def __getitem__(self, idx):
-        return((self.Xs[idx].astype(np.float32),
-                self.As[idx].astype(np.float32),
-                self.Es[idx].astype(np.float32),
-                self.Ns[idx].astype(np.float32),
-                self.Ys[idx].astype(np.float32)))
+        return((torch.from_numpy(self.Xs[idx]).float(),
+            torch.from_numpy(self.As[idx]).float(),
+            self.Es[idx],
+            self.Ns[idx],
+            self.Ys[idx]))
+
+
+def collate_data(dataset):
+    batch_Xs = []
+    batch_As = []
+    batch_Es = []
+    batch_Ns = []
+    batch_Ys = []
+    for i, (Xs, As, Es, Ns, Ys) in enumerate(dataset):
+        batch_Xs.append(Xs)
+        batch_As.append(As)
+        batch_Es.append(Es)
+        batch_Ns.append(Ns)
+        batch_Ys.append(Ys)
+
+    batch_Ns = np.array(batch_Ns)
+    batch_Ys = np.array(batch_Ys)
+    
+    return(torch.stack(batch_Xs, dim=0),
+        batch_As,
+        batch_Es,
+        torch.from_numpy(batch_Ns).float(),
+        torch.from_numpy(batch_Ys).float())
+
 
 
 def load_data(params):
@@ -50,7 +75,8 @@ def load_data(params):
     dataloader_args = {'batch_size': params['n_batch'],
                        'shuffle': True,
                        'pin_memory': False,
-                       'drop_last': False}
+                       'drop_last': False,
+                       'collate_fn': collate_data,}
 
     train_loader = DataLoader(trainset, **dataloader_args)
     val_loader = DataLoader(valset, **dataloader_args)
