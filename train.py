@@ -66,8 +66,8 @@ def train(train_loader,
     elif params['model'].lower() == 'mpnn':
         model = MPNN(params)
 
-    elif params['model'].lower() == 'gat_mpnn':
-        model = GAT_MPNN(params)
+    elif params['model'].lower() == 'gate_mpnn':
+        model = GATE_MPNN(params)
 
     if params['optimizer'].lower() == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=params['lr'])

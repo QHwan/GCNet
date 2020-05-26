@@ -75,7 +75,7 @@ def load_data(params):
     dataloader_args = {'batch_size': params['n_batch'],
                        'shuffle': True,
                        'pin_memory': False,
-                       'drop_last': False,
+                       'drop_last': True,
                        'collate_fn': collate_data,}
 
     train_loader = DataLoader(trainset, **dataloader_args)

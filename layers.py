@@ -80,6 +80,19 @@ class GraphAttention(CoreLayer):
         #H = torch.bmm(A_, H)
         return(H)
 
+class Gate(CoreLayer):
+    def __init__(self, n_node_fea, n_edge_fea, n_node, n_batch):
+        super().__init__(n_node_fea, n_edge_fea, n_node, n_batch)
+        self.W0 = Parameter(torch.FloatTensor(n_node_fea, n_node_fea))
+        self.W1 = Parameter(torch.FloatTensor(n_node_fea, n_node_fea))
+
+        self.reset_parameters_uniform(self.W0)
+        self.reset_parameters_uniform(self.W1)
+
+    def forward(self, H0, H1):
+        H0_filtered = torch.einsum("aij,jk->aik", (H0, self.W0))
+        H1_filtered = torch.einsum("aij,jk->aik", (H1, self.W1))
+        return(torch.sigmoid(H0_filtered+H1_filtered))
 
 class MessagePassing(CoreLayer):
     def __init__(self, n_node_fea, n_edge_fea, n_node, n_batch):
@@ -118,16 +131,12 @@ class MessagePassing(CoreLayer):
         return(HE)
 
     def forward(self, H, A, E, N):
-        H_filtered_self = torch.einsum("aij,jk->aik", (H, self.W_self)) 
+        H_filtered_self = torch.einsum("aij,jk->aik", (H, self.W_self))
 
         HE =self.message_convolution(H, A, E, N)
-        #print(HE.shape, A.shape); exit(1)
-        #HE = A.unsqueeze(3) * HE      
-        #HE = torch.sum(HE, dim=2)
 
         H_filtered_nei = torch.einsum("aij,jk->aik", (HE, self.W_nei)) 
-        #H_filtered_nei = torch.bmm(A_, H_filtered_nei) 
-        H1 = H_filtered_self + H_filtered_nei + self.bias
+        H1 = H_filtered_self + H_filtered_nei
         return(H1)
 
 
