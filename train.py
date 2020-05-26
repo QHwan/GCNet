@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 
 import time
+import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,6 +21,8 @@ from data.data_prepare import GraphDataset, load_data
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--f', type=str)
+parser.add_argument('--best_model', type=str, default='pretrained/best_model.pth.tar')
+parser.add_argument('--resume', type=str)
 parser.add_argument('--n_epoch', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=1e-3,
@@ -37,8 +40,8 @@ parser.add_argument('--model', type=str, default='GCN',
 parser.add_argument('--optimizer', type=str, default='Adam')
 parser.add_argument('--loss_fn', type=str, default='mse')
 parser.add_argument('--cuda', type=bool, default=False)
-parser.add_argument('--train_ratio', type=float, default=.8)
-parser.add_argument('--val_ratio', type=float, default=.1)
+parser.add_argument('--train_ratio', type=float, default=.6)
+parser.add_argument('--val_ratio', type=float, default=.2)
 parser.add_argument('--n_batch', type=int, default=8,
                     help='number of mini-batch')
 
@@ -85,6 +88,16 @@ def train(train_loader,
     n_train = len(train_loader)
     n_val = len(val_loader)
     best_mae_error = 1e8
+
+    # optionally resume from a checkpoint
+    if params['resume']:
+        if os.path.isfile(params['resume']):
+            checkpoint = torch.load(params['resume'])
+            best_mae_error = checkpoint['best_mae_error']
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+        else:
+            print("no checkpoint found at {}".format(params['resume']))
 
     for i in range(params['n_epoch']):
         outputs_val = []
@@ -139,7 +152,7 @@ def train(train_loader,
             })
 
     # test best model
-    best_model = torch.load('pretrained/best_model.pth.tar')
+    best_model = torch.load(params['best_model'])
     model.load_state_dict(best_model['state_dict'])
     model.eval()
     outputs_test = []
@@ -157,8 +170,6 @@ def train(train_loader,
 
     return(np.array(outputs_test))
 
-
-
 def cal_loss(x, kind):
     if kind.lower() == 'rmse':
         return(metrics.mean_squared_error(x[:,0], x[:,1], squared=False))
@@ -166,7 +177,7 @@ def cal_loss(x, kind):
     elif kind.lower() == 'mae':
         return(metrics.mean_absolute_error(x[:,0], x[:,1]))
 
-def save_best_model(state, filename='pretrained/best_model.pth.tar'):
+def save_best_model(state, filename=params['best_model']):
     torch.save(state, filename)
 
 
