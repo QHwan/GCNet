@@ -93,7 +93,7 @@ def train(model, optimizer, criterion, train_loader, mode):
     return(loss_train/n_data, np.array(output))
 
 
-# Train model
+# Train models
 np.random.seed(int(time.time()))
 torch.manual_seed(int(time.time()))
 
