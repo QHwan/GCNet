@@ -30,9 +30,7 @@ parser.add_argument('--lr', type=float, default=1e-3,
                     help='Initial learning rate.')
 parser.add_argument('--n_glayer', type=int, default=1,
                     help='Number of graph layer')
-parser.add_argument('--n_nlayer', type=int, default=1,
-                    help='Number of dense layer')
-parser.add_argument('--n_hid', nargs='+', type=int, default=32,
+parser.add_argument('--n_hid', type=int, default=32,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.2,
                     help='Dropout rate (1 - keep probability).')
@@ -41,10 +39,10 @@ parser.add_argument('--model', type=str, default='GCN',
 parser.add_argument('--test', type=bool, default=True)
 parser.add_argument('--optimizer', type=str, default='Adam')
 parser.add_argument('--loss_fn', type=str, default='mse')
-parser.add_argument('--cuda', type=bool, default=False)
+parser.add_argument('--cuda', type=bool, default=True)
 parser.add_argument('--train_ratio', type=float, default=.6)
 parser.add_argument('--val_ratio', type=float, default=.2)
-parser.add_argument('--n_batch', type=int, default=2,
+parser.add_argument('--n_batch', type=int, default=1024,
                     help='number of mini-batch')
 
 args = parser.parse_args()
@@ -54,7 +52,7 @@ def save_checkpoint(state, is_best, filename=params['best_model']):
     if is_best:
         torch.save(state, filename)
 
-def train(model, optimizer, criterion, train_loader, mode):
+def train(model, optimizer, criterion, scheduler, train_loader, mode):
     if mode == 'train':
         model.train()
     else:
@@ -71,8 +69,7 @@ def train(model, optimizer, criterion, train_loader, mode):
         A = Variable(A.to(device))
         Y = Variable(Y.to(device))
 
-        if mode == 'train':
-            optimizer.zero_grad()
+        optimizer.zero_grad()
 
         Y_pred = model(X, A, N)
 
@@ -85,10 +82,13 @@ def train(model, optimizer, criterion, train_loader, mode):
         loss_train += loss.cpu().data.numpy()
 
         if mode == 'test':
-            Y_pred = Y_pred.squeeze().detach().numpy()
+            Y_pred = Y_pred.squeeze().cpu().detach().numpy()
             Y = Y.squeeze().cpu().detach().numpy()
             for j in range(len(Y)):
                 output.append([Y[j], Y_pred[j]]) 
+
+    if mode == 'val':
+        scheduler.step(loss_train)
 
     return(loss_train/n_data, np.array(output))
 
@@ -98,7 +98,12 @@ np.random.seed(int(time.time()))
 torch.manual_seed(int(time.time()))
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device = "cpu"
+
+if params['cuda']:
+    device = torch.device("cuda:0")
+else:
+    device = torch.device("cpu")
+
 
 t_total = time.time()
 
@@ -108,19 +113,18 @@ params['n_edge_fea'] = dataset.n_edge_fea
 params['n_out_fea'] = dataset.n_out_fea
 #params['y_norm'] = dataset.Y_norm
 
-n_train = len(train_loader)
-n_val = len(val_loader)
 
 model = GCN(params).to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=params['lr'])
+#optimizer = optim.SGD(model.parameters(), lr=params['lr'])
 criterion = nn.MSELoss()
 
 scheduler = ReduceLROnPlateau(
     optimizer,
     'min',
     patience=10,
-    factor=0.9,
+    factor=0.95,
     verbose=True)
 
 if params['resume']:
@@ -142,12 +146,14 @@ for i in range(params['n_epoch']):
     loss_train, _  = train(model,
                         optimizer,
                         criterion,
+                        scheduler,
                         train_loader,
                         mode='train'
                         )
     loss_val, _ = train(model,
                         optimizer,
                         criterion,
+                        scheduler,
                         val_loader,
                         mode='val'
                         )
@@ -170,6 +176,7 @@ if params['test']:
     loss_test, output_test = train(model,
         optimizer,
         criterion,
+        scheduler,
         test_loader,
         mode='test'
         )

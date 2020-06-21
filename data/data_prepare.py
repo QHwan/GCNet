@@ -96,7 +96,7 @@ def load_data(params):
 
     dataloader_args = {'batch_size': params['n_batch'],
                        'shuffle': True,
-                       'pin_memory': False,
+                       'pin_memory': True,
                        'drop_last': False,
                        'collate_fn': collate_data,}
 
