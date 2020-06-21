@@ -23,7 +23,7 @@ def make_nn_layers(n_nlayer, n_hid, n_feat, dropout):
 class CoreModule(nn.Module):
     def __init__(self, params):
         super(CoreModule, self).__init__()
-        self.n_node = params['n_node']
+        #self.n_node = params['n_node']
         self.n_node_fea = params['n_node_fea']
         self.n_edge_fea = params['n_edge_fea']
         self.n_hid = params['n_hid']
@@ -109,13 +109,12 @@ class GCN(CoreModule):
 
         self.gc_layers = nn.ModuleDict({})
         for i in range(self.n_glayer):
-            self.gc_layers['gc{}'.format(i)] = GraphConvolution(self.n_node_fea, self.n_node_fea, self.n_node,
-                                                                n_batch=self.n_batch)
+            self.gc_layers['gc{}'.format(i)] = GraphConvolution(self.n_node_fea, self.n_node_fea)
             self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
             #if i == n_glayer-1:
             #    self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
 
-    def forward(self, X, A, E, N):
+    def forward(self, X, A, N):
         graph_layers = []
         graph_layers.append(X)
 
@@ -127,11 +126,16 @@ class GCN(CoreModule):
                 graph_layers.append(X)
             elif key.startswith('dropout'):
                 X = gc_layer(X)
-        X = torch.sum(X, dim=1)
-        X = torch.div(X, N.unsqueeze(1))
+        
+        X = self.pooling(X, N) 
 
         X = self.nn_layers(X)
         return(X)
+
+    def pooling(self, X, N):
+        summed_X = [torch.mean(X[n], dim=0, keepdim=True)
+                    for n in N]
+        return(torch.cat(summed_X, dim=0))
 
 
 

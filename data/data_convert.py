@@ -5,14 +5,13 @@ import tqdm
 import argparse
 import os
 import numpy as np
-import sparse 
 import pandas as pd
 from collections import Counter
 
 from rdkit import Chem
 from rdkit.Chem.rdmolops import GetAdjacencyMatrix
 
-# These are forked from MoleculeNet
+# These are forked from MoleculeNet letter
 atom_list = ['C', 'N', 'O', 'S', 'F', 'P', 'Cl', 'Mg', 'Na', 'Br', 'Fe', 'Ca', 'Cu',
              'Mc', 'Pd', 'Pb', 'K', 'I', 'Al', 'Ni', 'Mn']
 degree_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -113,7 +112,7 @@ n_feas = len(atom_list + degree_list + valence_list + formal_charge_list +
 n_edge_feas = len(bond_list + conjugate_list + ring_list)
 
 
-Xs = []; As = []; Es = []; Ns = []; Ys = []
+Xs = []; As = []; Es_idx = []; Es_fea = []; Ns = []; Ys = []
 for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     mol = Chem.MolFromSmiles(smile)
     atoms = mol.GetAtoms()
@@ -121,9 +120,10 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
 
     n_nodes = len(atoms)
 
-    X = np.zeros((max_n_nodes, n_feas))
-    A = np.zeros((max_n_nodes, max_n_nodes))
-    E = {}
+    X = np.zeros((n_nodes, n_feas))
+    A = np.zeros((n_nodes, n_nodes))
+    E_idx = []
+    E_fea = []
     N = len(atoms)
 
     for j, atom in enumerate(atoms):
@@ -133,17 +133,18 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
         for k in range(N):
             bond = mol.GetBondBetweenAtoms(j, k)
             if bond is not None:
-                E[(j,k)] = np.array(bond_features(bond)) 
+                E_idx.append([j, k])
+                E_fea.append(bond_features(bond)) 
 
-    A_mol = GetAdjacencyMatrix(mol)
-    A[0:len(A_mol), 0:len(A_mol)] += A_mol 
+    A = GetAdjacencyMatrix(mol)
     
-    Y = outs[i]
+    Y = [outs[i]]
 
-    Xs.append((X))
-    As.append((A))
-    Es.append((E))
+    Xs.append(X)
+    As.append(A)
+    Es_idx.append(E_idx)
+    Es_fea.append(E_fea)
     Ys.append(Y)
     Ns.append(N)
 
-np.savez_compressed(ofilename, Xs=Xs, As=As, Es=Es, Ys=Ys, Ns=Ns, max_n_nodes=max_n_nodes)
+np.savez_compressed(ofilename, Xs=Xs, As=As, Es_idx=Es_idx, Es_fea=Es_fea, Ys=Ys, Ns=Ns, max_n_nodes=max_n_nodes, allow_pickle=True)

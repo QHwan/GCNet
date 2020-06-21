@@ -8,12 +8,10 @@ import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 
 class CoreLayer(nn.Module):
-    def __init__(self, n_fea_in, n_fea_out, n_node, n_batch):
+    def __init__(self, n_fea_in, n_fea_out):
         super(CoreLayer, self).__init__()
         self.n_fea_in = n_fea_in
         self.n_fea_out = n_fea_out
-        self.n_node = n_node
-        self.n_batch = n_batch
 
     def reset_parameters_uniform(self, x):
         stdv = 1. / math.sqrt(x.size(0))
@@ -22,8 +20,8 @@ class CoreLayer(nn.Module):
 
 
 class GraphConvolution(CoreLayer):
-    def __init__(self, n_fea_in, n_fea_out, n_node, n_batch):
-        super().__init__(n_fea_in, n_fea_out, n_node, n_batch)
+    def __init__(self, n_fea_in, n_fea_out):
+        super().__init__(n_fea_in, n_fea_out)
         self.W_self = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
         self.W_nei = Parameter(torch.FloatTensor(n_fea_in, n_fea_out))
         self.bias = Parameter(torch.FloatTensor(n_fea_out))
@@ -33,10 +31,10 @@ class GraphConvolution(CoreLayer):
         self.reset_parameters_uniform(self.bias)
 
     def forward(self, H, A):
-        H_filtered_self = torch.einsum("aij,jk->aik", (H, self.W_self)) 
+        H_filtered_self = torch.mm(H, self.W_self) 
 
-        H_filtered_nei = torch.einsum("aij,jk->aik", (H, self.W_nei)) 
-        H_filtered_nei = torch.bmm(A, H_filtered_nei) 
+        H_filtered_nei = torch.mm(H, self.W_nei) 
+        H_filtered_nei = torch.mm(A, H_filtered_nei) 
         H1 = H_filtered_self + H_filtered_nei + self.bias
         return(H1)
 
