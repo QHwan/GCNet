@@ -38,9 +38,10 @@ parser.add_argument('--dropout', type=float, default=0.2,
 parser.add_argument('--model', type=str, default='GCN',
                     help='Network Model: GCN, GAT, GCN_Gate')
 parser.add_argument('--test', type=bool, default=True)
+parser.add_argument('--global', type=bool, default=False)
 parser.add_argument('--optimizer', type=str, default='Adam')
 parser.add_argument('--loss_fn', type=str, default='mse')
-parser.add_argument('--cuda', type=bool, default=True)
+parser.add_argument('--cuda', type=bool, default=False)
 parser.add_argument('--train_ratio', type=float, default=.6)
 parser.add_argument('--val_ratio', type=float, default=.2)
 parser.add_argument('--n_batch', type=int, default=1024,

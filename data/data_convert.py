@@ -6,6 +6,7 @@ import argparse
 import os
 import numpy as np
 import pandas as pd
+import networkx as nx
 from collections import Counter
 
 from rdkit import Chem
@@ -13,7 +14,7 @@ from rdkit.Chem.rdmolops import GetAdjacencyMatrix
 
 # These are forked from MoleculeNet letter
 atom_list = ['C', 'N', 'O', 'S', 'F', 'P', 'Cl', 'Mg', 'Na', 'Br', 'Fe', 'Ca', 'Cu',
-             'Mc', 'Pd', 'Pb', 'K', 'I', 'Al', 'Ni', 'Mn']
+             'Mc', 'Pd', 'Pb', 'K', 'I', 'Al', 'Ni', 'Mn', 'B', 'Si', 'Se']
 degree_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 valence_list = [0, 1, 2, 3, 4, 5, 6]
 formal_charge_list = [-3, -2, -1, 0, 1, 2, 3]
@@ -85,7 +86,9 @@ parser.add_argument('--dataset', type=str,
 args = parser.parse_args()
 
 dataset_dict = {'freesolv': ['freesolv.csv', 'freesolv.npz'],
-                'esol': ['esol.csv', 'esol.npz']}
+                'esol': ['esol.csv', 'esol.npz'],
+                'lipophilicity': ['lipophilicity.csv', 'lipophilicity.npz'],
+                }
 
 if args.dataset.lower() not in dataset_dict.keys():
     print("Choose supported datasets.")
@@ -106,13 +109,17 @@ if args.dataset == 'esol':
     smiles = np.array(raw_dataset['smiles'])
     outs = np.array(raw_dataset['measured log solubility in mols per litre'])
 
+if args.dataset == 'lipophilicity':
+    smiles = np.array(raw_dataset['smiles'])
+    outs = np.array(raw_dataset['exp'])
+
 max_n_nodes = get_max_n_nodes(smiles)
 n_feas = len(atom_list + degree_list + valence_list + formal_charge_list +
              radical_list + hybridization_list + aromatic_list + num_h_list)
 n_edge_feas = len(bond_list + conjugate_list + ring_list)
 
 
-Xs = []; As = []; Es_idx = []; Es_fea = []; Ns = []; Ys = []
+Xs = []; As = []; Es_idx = []; Es_fea = []; Ns = []; Ys = []; Gs = []
 for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     mol = Chem.MolFromSmiles(smile)
     atoms = mol.GetAtoms()
@@ -140,11 +147,34 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     
     Y = [outs[i]]
 
+    # global properties
+    g = nx.Graph()
+    g.add_nodes_from(list(range(N)))
+    g.add_edges_from(E_idx)
+
+    if not nx.is_connected(g):
+        print("{} is not connected".format(smile))
+        continue
+
+    deg_vec = [deg[1] for deg in g.degree()]
+    avg_deg = np.mean(deg_vec)
+
+    lap_spec = nx.linalg.spectrum.laplacian_spectrum(g)
+    max_lap = lap_spec.max()
+
+    shortest_pl = nx.average_shortest_path_length(g)
+
+
     Xs.append(X)
     As.append(A)
     Es_idx.append(E_idx)
     Es_fea.append(E_fea)
     Ys.append(Y)
     Ns.append(N)
+    Gs.append([avg_deg, max_lap, shortest_pl])
 
+<<<<<<< HEAD
+np.savez_compressed(ofilename, Xs=Xs, As=As, Es_idx=Es_idx, Es_fea=Es_fea, Ys=Ys, Ns=Ns, Gs=Gs, max_n_nodes=max_n_nodes, allow_pickle=True)
+=======
 np.savez_compressed(ofilename, Xs=Xs, As=As, Es_idx=Es_idx, Es_fea=Es_fea, Ys=Ys, Ns=Ns, max_n_nodes=max_n_nodes, allow_pickle=True)
+>>>>>>> 7f04a9070527c4e52040ad48cad2559b7ba95769
