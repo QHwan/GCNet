@@ -25,77 +25,11 @@ class CoreModule(nn.Module):
         self.n_glayer = params['n_glayer']
         self.n_batch = params['n_batch']
         self.dropout = params['dropout']
-        self.n_embed_fea = 16
+        self.n_embed_fea = 64
 
         self.nn_layers = make_nn_layers(self.n_hid,
                                         self.n_embed_fea,
                                         self.dropout)
-
-class MPNN(CoreModule):
-    def __init__(self, params):
-        super().__init__(params)
-
-        self.gc_layers = nn.ModuleDict({})
-        for i in range(self.n_glayer):
-            self.gc_layers['gc{}'.format(i)] = MessagePassing(self.n_node_fea,
-                                                        self.n_edge_fea,
-                                                        self.n_node,
-                                                        n_batch=self.n_batch)
-
-            self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
-            if i == self.n_glayer-1:
-                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(self.dropout)
-
-    def forward(self, X, A, E, N):
-        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
-            if key.startswith('gc'):
-                X = gc_layer(X, A, E, N)
-            elif key.startswith('relu'):
-                X = X + gc_layer(X)  ## residual network
-            elif key.startswith('dropout'):
-                X = gc_layer(X)
-        X = torch.sum(X, dim=1)
-        X = torch.div(X, N.unsqueeze(1))
-
-        X = self.nn_layers(X)
-        return(X)
-
-class GATE_MPNN(CoreModule):
-    def __init__(self, params):
-        super().__init__(params)
-
-        self.gc_layers = nn.ModuleDict({})
-        for i in range(self.n_glayer):
-            self.gc_layers['gc{}'.format(i)] = MessagePassing(self.n_node_fea,
-                                                        self.n_edge_fea,
-                                                        self.n_node,
-                                                        n_batch=self.n_batch)
-
-            self.gc_layers['relu{}'.format(i)] = nn.ReLU()   
-
-        self.gate_layer = Gate(self.n_node_fea,
-                            self.n_edge_fea,
-                            self.n_node,
-                            self.n_batch)  
-        
-        self.I = torch.ones(self.n_batch, self.n_node, self.n_node_fea)
-
-
-    def forward(self, X, A, E, N):
-        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
-            if key.startswith('gc'):
-                X = gc_layer(X, A, E, N)
-            else:
-                X_ = gc_layer(X)
-        
-        Z = self.gate_layer(X, X_)
-        X = Z*X_ + (self.I-Z)*X
-
-        X = torch.sum(X, dim=1)
-        X = torch.div(X, N.unsqueeze(1))
-
-        X = self.nn_layers(X)
-        return(X)
 
 class GCN(CoreModule):
     def __init__(self, params):
@@ -104,12 +38,14 @@ class GCN(CoreModule):
         self.embed_layer = nn.Linear(self.n_node_fea, self.n_embed_fea)
 
         self.gc1 = GraphConvolution(self.n_embed_fea, self.n_embed_fea)
+        self.gc2 = GraphConvolution(self.n_embed_fea, self.n_embed_fea)
         self.bn1 = nn.BatchNorm1d(self.n_embed_fea)        
 
-    def forward(self, X, A, N):
+    def forward(self, X, A, E, E_avg, N):
         X = self.embed_layer(X)
 
         X = X + F.leaky_relu(self.gc1(X, A))
+        X = X + F.leaky_relu(self.gc2(X, A))
         X = self.bn1(X)
         
         X = self.pooling(X, N) 
@@ -124,106 +60,59 @@ class GCN(CoreModule):
 
 
 
-
-class GAT_MPNN(CoreModule):
-    def __init__(self, n_node, n_node_fea, n_edge_fea, n_hid,
-                 n_nlayer, n_glayer, n_batch, dropout):
-        super().__init__(n_node, n_node_fea, n_edge_fea, n_hid,
-                         n_nlayer, n_glayer, n_batch, dropout)
-
-        self.gc_layers = nn.ModuleDict({})
-        for i in range(n_glayer):
-            self.gc_layers['gc{}'.format(i)] = AttentionMessagePassing(n_node_fea, n_edge_fea, n_node, n_batch=n_batch)
-            if i == n_glayer-1:
-                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
-
-    def forward(self, X, A, E, N):
-        graph_layers = []
-        graph_layers.append(X)
-
-        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
-            if key.startswith('gc'):
-                X = X + gc_layer(X, A, E, N)
-                graph_layers.append(X)
-            elif key.startswith('dropout'):
-                X = gc_layer(X)
-        #print(X.shape, N.shape)
-        #X = torch.stack(graph_layers, dim=0)
-        #X = torch.mean(X, dim=0)
-        X = torch.sum(X, dim=1)
-        X = torch.div(X, N.unsqueeze(1))
-
-        X = self.nn_layers(X)
-        return(X)
-
-
-class GAT(CoreModule):
-    def __init__(self, params):        
+class MGCN(CoreModule):
+    def __init__(self, params):
         super().__init__(params)
 
-        self.gat_layers = nn.ModuleDict({})
-        for i in range(self.n_glayer):
-            self.gat_layers['gat{}'.format(i)] = GraphAttention(self.n_node, 
-                                                    self.n_node_fea,
-                                                    self.n_node_fea,
-                                                    n_batch=self.n_batch)
-            self.gat_layers['relu{}'.format(i)] = nn.ReLU()
-            
-            #if i == self.n_glayer-1:
-            #    self.gat_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
+        self.embed_layer = nn.Linear(self.n_node_fea, self.n_embed_fea)
 
-    def forward(self, X, A, E, N):
-        graph_layers = []
-        graph_layers.append(X)
+        self.gc1 = MessageGraphConvolution(self.n_embed_fea, self.n_edge_fea)
+        self.gc2 = MessageGraphConvolution(self.n_embed_fea, self.n_edge_fea)
+        self.bn1 = nn.BatchNorm1d(self.n_embed_fea)        
 
-        for i, (key, gat_layer) in enumerate(self.gat_layers.items()):
-            if key.startswith('gat'):
-                X = X + gat_layer(X, A, N)
-            elif key.startswith('relu'):
-                X = gat_layer(X)
-                graph_layers.append(X)
-            elif key.startswith('dropout'):
-                X = gat_layer(X)
-       
-        #X = torch.mean(torch.stack(graph_layers), dim=0)
-        X = torch.sum(X, dim=1)
-        X = torch.div(X, N.unsqueeze(1))
+    def forward(self, X, A, E, E_avg, N):
+        X = self.embed_layer(X)
+
+        X = X + F.leaky_relu(self.gc1(X, A, E_avg))
+        X = X + F.leaky_relu(self.gc2(X, A, E_avg))
+        X = self.bn1(X)
+        
+        X = self.pooling(X, N) 
 
         X = self.nn_layers(X)
         return(X)
 
+    def pooling(self, X, N):
+        summed_X = [torch.mean(X[n], dim=0, keepdim=True)
+                    for n in N]
+        return(torch.cat(summed_X, dim=0))
 
 
-class GCN_Gate(CoreModule):
-    def __init__(self, n_node, n_feat, n_hid,
-                 n_nlayer, n_glayer, n_batch, dropout):
-        super().__init__(n_node, n_feat, n_hid,
-                         n_nlayer, n_glayer, n_batch, dropout)
+class MGAT(CoreModule):
+    def __init__(self, params):
+        super().__init__(params)
 
-        self.gc_layers = nn.ModuleDict({})
-        for i in range(n_glayer):
-            self.gc_layers['gc{}'.format(i)] = GatedGraphConvolution(n_feat, n_feat, n_node, n_batch=n_batch)
-            self.gc_layers['relu{}'.format(i)] = nn.ReLU()           
-            if i == n_glayer-1:
-                self.gc_layers['dropout{}'.format(i)] = nn.Dropout(dropout)
+        self.embed_layer = nn.Linear(self.n_node_fea, self.n_embed_fea)
 
+        self.gc1 = MessageGraphAttention(self.n_embed_fea, self.n_edge_fea)
+        self.gc2 = MessageGraphAttention(self.n_embed_fea, self.n_edge_fea)
+        self.bn1 = nn.BatchNorm1d(self.n_embed_fea)        
 
-    def forward(self, X, A, N):
-        graph_layers = []
-        graph_layers.append(X)
+    def forward(self, X, A, E, E_avg, N):
+        X = self.embed_layer(X)
 
-        for i, (key, gc_layer) in enumerate(self.gc_layers.items()):
-            if key.startswith('gc'):
-                X = gc_layer(X, A)
-            elif key.startswith('relu'):
-                X = gc_layer(X)
-                graph_layers.append(X)
-            elif key.startswith('dropout'):
-                X = gc_layer(X)
-       
-        #X = torch.mean(torch.mean(torch.stack(graph_layers), dim=0), dim=1)
-        X = torch.sum(X, dim=1)
-        X = torch.div(X, N.unsqueeze(1))
+        # activation is included in layers
+        X = X + self.gc1(X, A, E)
+        X = X + self.gc2(X, A, E)
+        #X = self.bn1(X)
+        
+        X = self.pooling(X, N) 
 
         X = self.nn_layers(X)
         return(X)
+
+    def pooling(self, X, N):
+        summed_X = [torch.mean(X[n], dim=0, keepdim=True)
+                    for n in N]
+        return(torch.cat(summed_X, dim=0))
+

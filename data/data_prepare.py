@@ -16,11 +16,13 @@ class GraphDataset(Dataset):
         self.Ns = self.file['Ns']
         self.Ys = self.file['Ys']
 
-        self.Ys /= self.Ys.min()
+        self.norm = self.Ys.min()
+        self.Ys /= self.norm
 
         self.n_node_fea = self.Xs[0].shape[1]
         self.n_edge_fea = len(self.Es_fea[0][0])
         self.n_out_fea = len(self.Ys[0])
+        
 
     def __len__(self):
         return(len(self.Xs))
@@ -37,42 +39,59 @@ class GraphDataset(Dataset):
             )
         )
 
-if __name__ == "__main__":
-    dataset = GraphDataset('dataset/freesolv.npz')
-    print(dataset[0])
-    exit(1)
 
 
 def collate_data(dataset):
     batch_Xs = []
+    batch_Es = []
+    batch_Es_avg = []
     batch_Ns = []
     batch_Ys = []
 
-    # first make X, Y batch
+
+    # first make X, Y batch, N_tot, n_edge_fea
     N_tot = 0
-    for i, (X, A, _, _, N, Y) in enumerate(dataset):
+    for i, (X, A, _, E_fea, N, Y) in enumerate(dataset):
         for x in X:
             batch_Xs.append(x)
         batch_Ys.append(Y)
         N_tot += N
 
-    # second make A, N batch
+        if i == 0:
+            n_edge_fea = np.shape(E_fea)[1]
+
+
+    # second make A, E_idx, E_fea, N batch
     batch_As = np.zeros((N_tot, N_tot))
+    batch_As = np.eye(N_tot)
+    batch_Es = np.zeros((N_tot, N_tot, n_edge_fea))
+    batch_Es_avg = np.zeros((N_tot, n_edge_fea))
     start_idx = 0
-    for i, (_, A, _, _, N, Y) in enumerate(dataset):
+    for i, (_, A, E_idx, E_fea, N, Y) in enumerate(dataset):
         batch_As[start_idx:start_idx+N, start_idx:start_idx+N] += A
+
+        for j, e_idx in enumerate(E_idx):
+            #batch_Es_idx.append([e_idx[0] + start_idx, e_idx[1] + start_idx])
+            batch_Es[e_idx[0] + start_idx, e_idx[1] + start_idx] += E_fea[j]
+            batch_Es_avg[e_idx[0] + start_idx] += E_fea[j]
         
         idx_atoms = torch.from_numpy(np.array(range(start_idx, start_idx+N))).long()
         batch_Ns.append(idx_atoms)
 
         start_idx += N
 
+
     batch_Xs = np.array(batch_Xs)
     batch_As = np.array(batch_As)
+    batch_Es = np.array(batch_Es)
+    batch_Es_avg = np.array(batch_Es_avg)
     batch_Ys = np.array(batch_Ys)
+
     
     return(torch.from_numpy(batch_Xs).float(),
         torch.from_numpy(batch_As).float(),
+        torch.from_numpy(batch_Es).float(),
+        torch.from_numpy(batch_Es_avg).float(),
         batch_Ns,
         torch.from_numpy(batch_Ys).float())
 
@@ -85,6 +104,8 @@ def load_data(params):
     n_val = int(n_data*params['val_ratio'])
     n_test = n_data - n_train - n_val
 
+    print(n_data, n_train, n_val, n_test)
+
     params['n_train'] = n_train
     params['n_val'] = n_val
     params['n_test'] = n_test
@@ -95,7 +116,7 @@ def load_data(params):
     testset = Subset(dataset, list(range(n_train+n_val, n_train+n_val+n_test)))
 
     dataloader_args = {'batch_size': params['n_batch'],
-                       'shuffle': True,
+                       'shuffle': False,
                        'pin_memory': True,
                        'drop_last': False,
                        'collate_fn': collate_data,}

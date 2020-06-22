@@ -95,8 +95,8 @@ ifilename = os.path.join('dataset', dataset_dict[args.dataset.lower()][0])
 ofilename = os.path.join('dataset', dataset_dict[args.dataset.lower()][1])
 
 raw_dataset = pd.read_csv(ifilename)
-if args.dataset == 'freesolv':
-    raw_dataset = raw_dataset[raw_dataset['expt'] > -10]
+#if args.dataset == 'freesolv':
+#    raw_dataset = raw_dataset[raw_dataset['expt'] > -10]
 
 if args.dataset == 'freesolv':
     smiles = np.array(raw_dataset['smiles'])
