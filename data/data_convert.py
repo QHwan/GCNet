@@ -120,6 +120,7 @@ n_edge_feas = len(bond_list + conjugate_list + ring_list)
 
 
 Xs = []; As = []; Es_idx = []; Es_fea = []; Ns = []; Ys = []; Gs = []
+A2s = []; E2s_idx = []; E2s_fea = []
 for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
     mol = Chem.MolFromSmiles(smile)
     atoms = mol.GetAtoms()
@@ -129,9 +130,15 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
 
     X = np.zeros((n_nodes, n_feas))
     A = np.zeros((n_nodes, n_nodes))
+    A2 = np.zeros((n_nodes, n_nodes))
     E_idx = []
+    E2_idx = []
     E_fea = []
+    E2_fea = []
     N = len(atoms)
+
+    if N <= 2:
+        continue
 
     for j, atom in enumerate(atoms):
         X[j] = atom_features(atom)
@@ -144,6 +151,7 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
                 E_fea.append(bond_features(bond)) 
 
     A = GetAdjacencyMatrix(mol)
+
     
     Y = [outs[i]]
 
@@ -156,25 +164,39 @@ for i, smile in tqdm.tqdm(enumerate(smiles), total=len(smiles)):
         print("{} is not connected".format(smile))
         continue
 
-    deg_vec = [deg[1] for deg in g.degree()]
-    avg_deg = np.mean(deg_vec)
+    for j in range(N):
+        for k in range(N):
+            if j == k:
+                continue
+            shortest_path = nx.shortest_path(g, source=j, target=k)
+            if len(shortest_path) == 3:
+                A2[j, k] = 1
 
-    lap_spec = nx.linalg.spectrum.laplacian_spectrum(g)
-    max_lap = lap_spec.max()
+                edge1 = shortest_path[:2]
+                edge2 = shortest_path[1:]
+                edge1_fea = E_fea[E_idx.index(edge1)]
+                edge2_fea = E_fea[E_idx.index(edge2)]
+                edge_fea = list((np.array(edge1_fea) + np.array(edge2_fea))*0.5)
 
-    shortest_pl = nx.average_shortest_path_length(g)
+                E2_idx.append([shortest_path[0], shortest_path[2]])
+                E2_fea.append(edge_fea)
 
 
     Xs.append(X)
     As.append(A)
+    A2s.append(A2)
     Es_idx.append(E_idx)
+    E2s_idx.append(E2_idx)
     Es_fea.append(E_fea)
+    E2s_fea.append(E2_fea)
     Ys.append(Y)
     Ns.append(N)
-    Gs.append([avg_deg, max_lap, shortest_pl])
 
-<<<<<<< HEAD
-np.savez_compressed(ofilename, Xs=Xs, As=As, Es_idx=Es_idx, Es_fea=Es_fea, Ys=Ys, Ns=Ns, Gs=Gs, max_n_nodes=max_n_nodes, allow_pickle=True)
-=======
-np.savez_compressed(ofilename, Xs=Xs, As=As, Es_idx=Es_idx, Es_fea=Es_fea, Ys=Ys, Ns=Ns, max_n_nodes=max_n_nodes, allow_pickle=True)
->>>>>>> 7f04a9070527c4e52040ad48cad2559b7ba95769
+np.savez_compressed(ofilename, Xs=Xs, 
+    As=As, 
+    A2s=A2s,
+    Es_idx=Es_idx, 
+    E2s_idx=E2s_idx,
+    Es_fea=Es_fea, 
+    E2s_fea=E2s_fea,
+    Ys=Ys, Ns=Ns, max_n_nodes=max_n_nodes, allow_pickle=True)

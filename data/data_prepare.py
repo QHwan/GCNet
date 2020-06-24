@@ -48,6 +48,7 @@ def collate_data(dataset):
     batch_Ns = []
     batch_Ys = []
 
+    n_edge_fea = 8
 
     # first make X, Y batch, N_tot, n_edge_fea
     N_tot = 0
@@ -57,41 +58,19 @@ def collate_data(dataset):
         batch_Ys.append(Y)
         N_tot += N
 
-        if i == 0:
-            n_edge_fea = np.shape(E_fea)[1]
-
-
-<<<<<<< HEAD
 
     # second make A, E_idx, E_fea, N batch
     batch_As = np.zeros((N_tot, N_tot))
-=======
-    # second make A, E_idx, E_fea, N batch
-    batch_As = np.zeros((N_tot, N_tot))
-    batch_As = np.eye(N_tot)
->>>>>>> 7f04a9070527c4e52040ad48cad2559b7ba95769
     batch_Es = np.zeros((N_tot, N_tot, n_edge_fea))
     batch_Es_avg = np.zeros((N_tot, n_edge_fea))
     start_idx = 0
     for i, (_, A, E_idx, E_fea, N, Y) in enumerate(dataset):
         batch_As[start_idx:start_idx+N, start_idx:start_idx+N] += A
 
-<<<<<<< HEAD
-        '''
-=======
->>>>>>> 7f04a9070527c4e52040ad48cad2559b7ba95769
-        for j, e_idx in enumerate(E_idx):
-            #batch_Es_idx.append([e_idx[0] + start_idx, e_idx[1] + start_idx])
-            batch_Es[e_idx[0] + start_idx, e_idx[1] + start_idx] += E_fea[j]
-            batch_Es_avg[e_idx[0] + start_idx] += E_fea[j]
-<<<<<<< HEAD
-        '''
         E_idx = np.array(E_idx)
         batch_Es[E_idx[:,0] + start_idx, E_idx[:,1] + start_idx] += E_fea
         batch_Es_avg[E_idx[:,0] + start_idx] += E_fea
-=======
->>>>>>> 7f04a9070527c4e52040ad48cad2559b7ba95769
-        
+
         idx_atoms = torch.from_numpy(np.array(range(start_idx, start_idx+N))).long()
         batch_Ns.append(idx_atoms)
 
@@ -103,11 +82,6 @@ def collate_data(dataset):
     batch_Es = np.array(batch_Es)
     batch_Es_avg = np.array(batch_Es_avg)
     batch_Ys = np.array(batch_Ys)
-
-<<<<<<< HEAD
-
-=======
->>>>>>> 7f04a9070527c4e52040ad48cad2559b7ba95769
     
     return(torch.from_numpy(batch_Xs).float(),
         torch.from_numpy(batch_As).float(),
@@ -137,11 +111,10 @@ def load_data(params):
     testset = Subset(dataset, list(range(n_train+n_val, n_train+n_val+n_test)))
 
     dataloader_args = {'batch_size': params['n_batch'],
-                       'shuffle': False,
+                       'shuffle': True,
                        'pin_memory': True,
                        'drop_last': False,
-                       'collate_fn': collate_data,
-                       'num_workers': 4,}
+                       'collate_fn': collate_data,}
 
     train_loader = DataLoader(trainset, **dataloader_args)
     val_loader = DataLoader(valset, **dataloader_args)

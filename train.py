@@ -27,7 +27,7 @@ parser.add_argument('--best_model', type=str, default=None)
 parser.add_argument('--resume', type=str)
 parser.add_argument('--n_epoch', type=int, default=200,
                     help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=1e-3,
+parser.add_argument('--lr', type=float, default=2e-4,
                     help='Initial learning rate.')
 parser.add_argument('--n_glayer', type=int, default=1,
                     help='Number of graph layer')
@@ -78,15 +78,23 @@ def train(model, optimizer, criterion, scheduler, train_loader, mode):
     for i, batch in enumerate(train_loader):
         X, A, E, E_avg, N, Y = batch
 
+        data = {}
+
         X = Variable(X.to(device))
         A = Variable(A.to(device))
         E = Variable(E.to(device))
         E_avg = Variable(E_avg.to(device))
         Y = Variable(Y.to(device))
 
+        data['X'] = X
+        data['A'] = A
+        data['E'] = E
+        data['E_avg'] = E_avg
+        data['N'] = N
+
         optimizer.zero_grad()
 
-        Y_pred = model(X, A, E, E_avg, N)
+        Y_pred = model(data)
 
         loss = criterion(Y_pred, Y)
 
